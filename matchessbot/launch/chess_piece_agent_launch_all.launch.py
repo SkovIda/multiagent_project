@@ -21,11 +21,16 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
 def generate_launch_description():
+    os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
     # config = os.path.join(
     #     get_package_share_directory('matchessbot'),
     #     'config',
     #     'chess_piece_agents_params.yaml'
     # )
+    arguments = []
+    DEBUG_ENV = os.environ.get('MATCHESS_DEBUG', 'FALSE').lower() in ('true', '1', 't')
+    if DEBUG_ENV:
+        arguments = ['--ros-args', '--log-level', ['matchessbot', ':=', 'DEBUG']]
 
     piece_color_launch_arg = DeclareLaunchArgument(
         'piece_color', default_value=TextSubstitution(text='white')
@@ -45,13 +50,6 @@ def generate_launch_description():
     pieces = []
     pieces = ['king', 'queen', 'rook0', 'rook7', 'knight1', 'knight6', 'bishop2', 'bishop5',
                                   'pawn0', 'pawn1', 'pawn2', 'pawn3', 'pawn4', 'pawn5', 'pawn6', 'pawn7']
-    
-    white_peices = ['white_king', 'white_queen', 'white_rook0', 'white_rook7', 'white_knight1', 'white_knight6', 'white_bishop2', 'white_bishop5',
-                                  'white_pawn0', 'white_pawn1', 'white_pawn2', 'white_pawn3', 'white_pawn4', 'white_pawn5', 'white_pawn6', 'white_pawn7']
-
-
-    black_pieces = ['black_king', 'black_queen', 'black_rook0', 'black_rook7', 'black_knight1', 'black_knight6', 'black_bishop2', 'black_bishop5',
-                                  'black_pawn0', 'black_pawn1', 'black_pawn2', 'black_pawn3', 'black_pawn4', 'black_pawn5', 'black_pawn6', 'black_pawn7'] 
     
     config_filename = ''
 
@@ -81,6 +79,7 @@ def generate_launch_description():
                 # name=agent_name,
                 name= agent_name,
                 parameters = [config],
+                arguments=arguments
             )
         ld.add_action(node)
 

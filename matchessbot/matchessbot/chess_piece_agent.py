@@ -1,5 +1,7 @@
 import rclpy
+import rclpy.logging
 from rclpy.node import Node
+import rclpy.qos
 
 from std_msgs.msg import String
 
@@ -18,9 +20,10 @@ from . import chess_utils
 from matchess_interfaces.msg import ChessMove # type: ignore
 from matchess_interfaces.msg import ChessMoveVote # type: ignore
 
+from .game_status import GAME_STATUS
+from matchess_interfaces.msg import GameStatus # type: ignore
 
 import random
-
 
 
 class ChessPieceAgent(Node):
@@ -41,18 +44,22 @@ class ChessPieceAgent(Node):
         # self.pos_square_idx = pos_square_idx
 
         # MAS input subscription:
+        self.qos = rclpy.qos.QoSProfile(
+            reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, 
+            history=rclpy.qos.HistoryPolicy.KEEP_ALL, 
+            depth=1)
         self.subscription = self.create_subscription(
             ChessMove,
             'matchess/out',
             self.listener_callback,
-            10)
+            self.qos)
         self.subscription  # prevent unused variable warning
 
         # TODO: MAS output publish:
         self.publisher_ = self.create_publisher(
             ChessMoveVote,
             'matchess/in',
-            10)
+            self.qos)
 
         # Test parameters:
         self.piece_color_param = self.get_parameter('piece_color').get_parameter_value().string_value
@@ -142,80 +149,64 @@ class ChessPieceAgent(Node):
         # self.timer = self.create_timer(timer_period, self.peer2peer_timer_callback)
 
 
+        self.game_status = GAME_STATUS.OK
+        self.game_over = False
+        self.robot_loop_publisher_ = self.create_publisher(
+            GameStatus,
+            'matchess/game_status',
+            self.qos)
+        robot_logic_timer_period = 0.5  # seconds
+        self.timer = self.create_timer(robot_logic_timer_period, self.main_logic)
 
-    def listener_callback(self, msg):
-        # Temp fix for dead agents not reacting to any messages:
+    def update_game_state(self, obs_move_uci):
+        if chess.Move.from_uci(obs_move_uci) not in self.board_state.legal_moves:
+            return
+        # Update internal state of the game:
+        self.last_recieved_move = self.board_state.push_uci(obs_move_uci) # NOTE: board.push_uci() throws an error if the move is invalid
+
+        # Verify state transistion is valid:
+        if self.board_state.is_valid():
+            self.get_logger().info('Accept valid move obs from manager: "%s"' % obs_move_uci)
+            
+            # NOTE: Temp to ftest that state is updated:
+            self.get_logger().info('New state: "%s"' % self.board_state.fen())
+        else:
+            self.get_logger().info('Reject invalid move from manager: "%s"' % obs_move_uci)
+        
+
+    def update_agent_state(self, obs_move_uci):
         if not self.is_alive:
             return
         
-        state_transition_observed = False
-        # if self.prev_move_uci == msg.uci:
-        #     return
-        if (self.prev_move_uci == msg.uci):
-            # Do nothing if this is the firt move in the game and the player is not white:
-            if self.prev_move_uci != "" and (self.piece_color != chess.WHITE):
-                return
-        else:
-            self.prev_move_uci = msg.uci
-            state_transition_observed = True
-            self.chosen_move_uci = ''
-            self.get_logger().info('Current state: "%s"' % self.board_state.fen())
-            self._debug_pub_vote_count = 0
+        # TODO: ensure that the pos of rooks are updated for castling moves:
+        # update_rook_pos = False
+        if (self.board_state.turn == self.piece_color) and (self.piece_type == chess.ROOK):
+            chess_move = chess.Move.from_uci(obs_move_uci)
+            if self.board_state.is_castling(chess_move):
+                # update rook position for castling moves:
+                self.rank_idx = chess.square_rank(chess_move.from_square)
+                if self.board_state.is_kingside_castling(chess_move):
+                    self.file_idx = 5   # f-file
+                elif self.board_state.is_queenside_castling(chess_move):
+                    self.file_idx = 3   # d-file
+                self.current_pos_square = chess.square(file_index=self.file_idx, rank_index=self.rank_idx)
 
-        # Log the incomming message:
-        self.get_logger().info('I heard: "%s"' % msg.uci)
+        # if len(self.board_state.move_stack) > 0:
+        #     last_recieved_move = self.board_state.peek()
 
-        if msg.uci != "":
-            # Verify that the observed move is legal:
-            if chess.Move.from_uci(msg.uci) in self.board_state.legal_moves:
-                # TODO: ensure that the pos of rooks are updated for castling moves:
-                # update_rook_pos = False
-                if (self.board_state.turn == self.piece_color) and (self.piece_type == chess.ROOK): # and self.board_state.is_castling(chess_move):
-                    chess_move = chess.Move.from_uci(msg.uci)
-                    if self.board_state.is_castling(chess_move):
-                        # update_rook_pos = True
-                        self.rank_idx = chess.square_rank(chess_move.from_square)
-                        if self.board_state.is_kingside_castling(chess_move):
-                            self.file_idx = 5   # f-file
-                        elif self.board_state.is_queenside_castling(chess_move):
-                            self.file_idx = 3   # d-file
-                        self.current_pos_square = chess.square(file_index=self.file_idx, rank_index=self.rank_idx)
-                
-                # Update internal state of the game:
-                recieved_move = self.board_state.push_uci(msg.uci) # NOTE: board.push_uci() throws an error if the move is invalid
+        # Check if this piece has been captured:
+        if self.last_recieved_move.to_square == self.current_pos_square:
+            self.is_alive = False
+            self.get_logger().info('I was captured with move: "%s" ' % obs_move_uci)
+            
+            # TODO: Handle moving the physical robot off the board???
+        elif self.last_recieved_move.from_square == self.current_pos_square:
+            self.current_pos_square = self.last_recieved_move.to_square   # Update piece position
 
-                # Verify state transistion is valid:
-                if self.board_state.is_valid():
-                    self.get_logger().info('Accept valid move obs from manager: "%s"' % msg.uci)
-                    
-                    # NOTE: Temp to ftest that state is updated:
-                    self.get_logger().info('New state: "%s"' % self.board_state.fen())
-                else:
-                    self.get_logger().info('Reject invalid move from manager: "%s"' % msg.uci)
+        # TODO: Handle en passant captures!!!
+        return
 
-                # Check if this piece has been captured:
-                if recieved_move.to_square == self.current_pos_square:
-                    self.is_alive = False
-                    self.get_logger().info('I was captured with move: "%s" ' % msg.uci)
-                    # TODO: Handle moving the physical robot off the board???
-                    
-                    # TODO: add following line to destroy the node???
-                    # self.destroy_node()
-                    return
-                elif recieved_move.from_square == self.current_pos_square:
-                    self.current_pos_square = recieved_move.to_square   # Update piece position
-
-                # TODO: Handle en passant captures!!!
-
-                # Check if game is over:
-                if self.board_state.is_game_over():
-                    # TODO: handle rewards (and closing down the game properly???)
-                    self.get_logger().info('Game over with move: "%s"' % msg.uci)
-
-                    # # TODO: add following line to destroy the node???
-                    # self.destroy_node()
-                    return
-
+    def pub_agent_decision(self, state_transition_observed):
         if self.board_state.turn == self.piece_color and self.is_alive:
             if state_transition_observed:
                 # Choose a random move to vote for:
@@ -236,14 +227,133 @@ class ChessPieceAgent(Node):
             msg_out.agentcount = int(len(alive_pieces_on_team))
             
             self.publisher_.publish(msg_out)
-            # # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentpos)
-            # self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
-            # # self.get_logger().info('#Agents on team still alive: %d' % msg_out.agentcount)
+        return
 
-            # # NOTE: temp_debug_log:
-            # self._debug_pub_vote_count += 1
-            # temp_debug_log = 'Agent: ' + self.agentname + '\tvote for move: ' + msg_out.uci + '\tPub #' + str(self._debug_pub_vote_count)
-            # self.get_logger().info(temp_debug_log)
+
+
+
+    def listener_callback(self, msg):
+        if self.game_status == GAME_STATUS.STOP:
+            return
+        
+        # # Temp fix for dead agents not reacting to any messages:
+        # if not self.is_alive:
+        #     return
+        
+        state_transition_observed = False
+        # if self.prev_move_uci == msg.uci:
+        #     return
+        if (self.prev_move_uci == msg.uci):
+            # Do nothing if this is the firt move in the game and the player is not white:
+            if self.prev_move_uci != "" and (self.piece_color != chess.WHITE):
+                return
+        else:
+            self.prev_move_uci = msg.uci
+            state_transition_observed = True
+            self.chosen_move_uci = ''
+            self.get_logger().info('Current state: "%s"' % self.board_state.fen())
+            self._debug_pub_vote_count = 0
+
+        # Log the incomming message:
+        self.get_logger().info('I heard: "%s"' % msg.uci)
+
+        if msg.uci != "":
+            
+            self.update_game_state(msg.uci)
+
+            self.update_agent_state(msg.uci)
+
+            # Check if game is over:
+            if self.board_state.is_game_over():
+                # TODO: handle rewards
+                self.get_logger().info('Game over with move: "%s"' % msg.uci)
+
+                # Update game_status:
+                self.game_status = GAME_STATUS.STOP # This will destroy the node
+                return
+
+            # # Verify that the observed move is legal:
+            # if chess.Move.from_uci(msg.uci) in self.board_state.legal_moves:
+            #     # TODO: ensure that the pos of rooks are updated for castling moves:
+            #     # update_rook_pos = False
+            #     if (self.board_state.turn == self.piece_color) and (self.piece_type == chess.ROOK): # and self.board_state.is_castling(chess_move):
+            #         chess_move = chess.Move.from_uci(msg.uci)
+            #         if self.board_state.is_castling(chess_move):
+            #             # update_rook_pos = True
+            #             self.rank_idx = chess.square_rank(chess_move.from_square)
+            #             if self.board_state.is_kingside_castling(chess_move):
+            #                 self.file_idx = 5   # f-file
+            #             elif self.board_state.is_queenside_castling(chess_move):
+            #                 self.file_idx = 3   # d-file
+            #             self.current_pos_square = chess.square(file_index=self.file_idx, rank_index=self.rank_idx)
+                
+            #     # Update internal state of the game:
+            #     recieved_move = self.board_state.push_uci(msg.uci) # NOTE: board.push_uci() throws an error if the move is invalid
+
+            #     # Verify state transistion is valid:
+            #     if self.board_state.is_valid():
+            #         self.get_logger().info('Accept valid move obs from manager: "%s"' % msg.uci)
+                    
+            #         # NOTE: Temp to ftest that state is updated:
+            #         self.get_logger().info('New state: "%s"' % self.board_state.fen())
+            #     else:
+            #         self.get_logger().info('Reject invalid move from manager: "%s"' % msg.uci)
+
+            #     # Check if this piece has been captured:
+            #     if recieved_move.to_square == self.current_pos_square:
+            #         self.is_alive = False
+            #         self.get_logger().info('I was captured with move: "%s" ' % msg.uci)
+            #         # TODO: Handle moving the physical robot off the board???
+                    
+            #         # TODO: add following line to destroy the node???
+            #         # self.game_status = GAME_STATUS.STOP
+            #         # self.game_over = True
+            #         # self.destroy_node()
+            #         return
+            #     elif recieved_move.from_square == self.current_pos_square:
+            #         self.current_pos_square = recieved_move.to_square   # Update piece position
+
+            #     # TODO: Handle en passant captures!!!
+
+            #     # Check if game is over:
+            #     if self.board_state.is_game_over():
+            #         # TODO: handle rewards (and closing down the game properly???)
+            #         self.get_logger().info('Game over with move: "%s"' % msg.uci)
+
+            #         # # # TODO: add following line to destroy the node???
+            #         self.game_status = GAME_STATUS.STOP
+            #         # # self.destroy_node()
+            #         return
+        
+        self.pub_agent_decision(state_transition_observed)
+        # if self.board_state.turn == self.piece_color and self.is_alive:
+        #     if state_transition_observed:
+        #         # Choose a random move to vote for:
+        #         legal_move_count = self.board_state.legal_moves.count()
+        #         random_move_idx = random.sample(range(legal_move_count), 1)[0]
+        #         chosen_move = list(self.board_state.legal_moves)[random_move_idx]
+        #         self.chosen_move_uci = chess.Move.uci(chosen_move)
+
+        #         temp_debug_log = 'Agent: ' + self.agentname + '\twill vote for move: ' + self.chosen_move_uci
+        #         self.get_logger().info(temp_debug_log)
+
+        #     # NOTE: This is temporary, should be peer-to-peer communication (could be centralized so the king manages the coordination for the team???
+        #     msg_out = ChessMoveVote()
+        #     msg_out.uci = self.chosen_move_uci
+        #     msg_out.agentname = self.agentname # chess.square_name(self.current_pos_square)
+            
+        #     alive_pieces_on_team = {key: value for key, value in self.board_state.piece_map().items() if value.color == self.piece_color}
+        #     msg_out.agentcount = int(len(alive_pieces_on_team))
+            
+        #     self.publisher_.publish(msg_out)
+        #     # # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentpos)
+        #     # self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
+        #     # # self.get_logger().info('#Agents on team still alive: %d' % msg_out.agentcount)
+
+        #     # # NOTE: temp_debug_log:
+        #     # self._debug_pub_vote_count += 1
+        #     # temp_debug_log = 'Agent: ' + self.agentname + '\tvote for move: ' + msg_out.uci + '\tPub #' + str(self._debug_pub_vote_count)
+        #     # self.get_logger().info(temp_debug_log)
 
 
         # # Test parameters:
@@ -252,19 +362,37 @@ class ChessPieceAgent(Node):
         # piece_params = piece_color + piece_type
         # self.get_logger().info('I am a %s!' % piece_params)
 
+    def main_logic(self):
+        '''
+        main robot logic goes here
+        '''
+
+        if self.game_status == GAME_STATUS.STOP:
+            # Pub msg about game status before shutting down node:
+            msg_game_status = GameStatus()
+            msg_game_status.status_str = self.game_status.name
+            msg_game_status.status_int = self.game_status.value
+            self.robot_loop_publisher_.publish(msg_game_status)
+
+            raise Exception("Shutting down node, Game over")
 
 def main(args=None):
     rclpy.init(args=args)
 
     chess_piece_agent_node = ChessPieceAgent()
 
-    rclpy.spin(chess_piece_agent_node)
+    try:
+        rclpy.spin(chess_piece_agent_node)
+    except Exception as err:
+        rclpy.logging.get_logger("node shutdown").info(f"{err.args}")
+    except KeyboardInterrupt:
+        pass
 
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically
     # when the garbage collector destroys the node object)
     chess_piece_agent_node.destroy_node()
-    rclpy.shutdown()
+    rclpy.try_shutdown()
 
 
 if __name__ == '__main__':

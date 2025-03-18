@@ -2,6 +2,7 @@ import json
 
 import rclpy
 from rclpy.node import Node
+import rclpy.qos
 
 from std_msgs.msg import String
 from matchess_interfaces.msg import ChessMove # type: ignore
@@ -22,18 +23,19 @@ class PlayerStockfish(Node):
         self.piece_color = chess.BLACK
 
 
+        self.qos = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=1)
         self.subscription = self.create_subscription(
             ChessMove,
             'matchess/out',
             self.listener_callback,
-            10)
+            self.qos)
         self.subscription  # prevent unused variable warning
 
 
         self.publisher_ = self.create_publisher(
             ChessMoveVote,
             'matchess/in',
-            10)
+            self.qos)
         
         self.engine = chess.engine.SimpleEngine.popen_uci(r"/usr/games/stockfish")
         self.engine_board = chess.Board()

@@ -1,0 +1,2 @@
+string status_str
+int8 status_int
