@@ -1,0 +1,98 @@
+king:
+  ros__parameters:
+    piece_color: black
+    piece_type: king
+    start_file_idx: 4
+
+queen:
+  ros__parameters:
+    piece_color: black
+    piece_type: queen
+    start_file_idx: 3
+
+rook0:
+  ros__parameters:
+    piece_color: black
+    piece_type: rook
+    start_file_idx: 0
+
+rook7:
+  ros__parameters:
+    piece_color: black
+    piece_type: rook
+    start_file_idx: 7
+
+
+knight1:
+  ros__parameters:
+    piece_color: black
+    piece_type: knight
+    start_file_idx: 1
+
+knight6:
+  ros__parameters:
+    piece_color: black
+    piece_type: knight
+    start_file_idx: 6
+
+
+bishop2:
+  ros__parameters:
+    piece_color: black
+    piece_type: bishop
+    start_file_idx: 2
+
+bishop5:
+  ros__parameters:
+    piece_color: black
+    piece_type: bishop
+    start_file_idx: 5
+
+
+pawn0:
+  ros__parameters:
+    piece_color: black
+    piece_type: pawn
+    start_file_idx: 0
+
+pawn1:
+  ros__parameters:
+    piece_color: black
+    piece_type: pawn
+    start_file_idx: 1
+
+pawn2:
+  ros__parameters:
+    piece_color: black
+    piece_type: pawn
+    start_file_idx: 2
+
+pawn3:
+  ros__parameters:
+    piece_color: black
+    piece_type: pawn
+    start_file_idx: 3
+
+pawn4:
+  ros__parameters:
+    piece_color: black
+    piece_type: pawn
+    start_file_idx: 4
+
+pawn5:
+  ros__parameters:
+    piece_color: black
+    piece_type: pawn
+    start_file_idx: 5
+
+pawn6:
+  ros__parameters:
+    piece_color: black
+    piece_type: pawn
+    start_file_idx: 6
+
+pawn7:
+  ros__parameters:
+    piece_color: black
+    piece_type: pawn
+    start_file_idx: 7
