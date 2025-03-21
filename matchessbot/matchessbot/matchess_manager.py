@@ -1,6 +1,7 @@
 import json
 
 import rclpy
+import rclpy.logging
 import rclpy.qos
 
 ###############################################################################
@@ -13,6 +14,10 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from matchess_interfaces.msg import ChessMove # type: ignore
 from matchess_interfaces.msg import ChessMoveVote # type: ignore
+
+from .game_status import GAME_STATUS
+from matchess_interfaces.msg import GameStatus # type: ignore
+
 
 import chess
 import chess.svg
@@ -49,6 +54,14 @@ class MatchessManager(Node):
             ChessMove, # CHANGED FROM: String,
             'matchess/out',
             self.qos)
+        
+        self.game_status_sub = self.create_subscription(
+            GameStatus,
+            'matchess/game_status',
+            self.agent_status_callback,
+            self.qos)
+        self.game_status_sub  # prevent unused variable warning
+        
         
         # TODO:
         # Handle "lossy communication of moves to agents"
@@ -269,6 +282,10 @@ class MatchessManager(Node):
         # msg_out.data = self.previous_move_uci
         self.publisher_.publish(msg_out)
 
+    def agent_status_callback(self, msg_in):
+        if msg_in.status_int == int(GAME_STATUS.STOP.value):
+            raise Exception("Shutting down manager node, Game over")
+
 
 def main(args=None):
     rclpy.init(args=None)
@@ -279,6 +296,8 @@ def main(args=None):
 
     try:
         rclpy.spin(matchess_man)
+    except Exception as err:
+        rclpy.logging.get_logger("node shutdown").info(f"{err.args}")
     except KeyboardInterrupt:
         pass
 

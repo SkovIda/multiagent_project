@@ -43,4 +43,5 @@ git clone git@github.com:SkovIda/multiagent_project.git
         1. [X] Publish a message to the *"general system status" topic:* 'matchess/game_status' with the overall status of the game (from the agent's perspective): NONE, OK, STOP
         1. [X] Raise a *shutdown node error* in *main logic* callback when the *game-over flag* is set and catch this error in the main loop with a "try catch" around the `rclpy.spin(node_name)` in the main function
         1. [ ] *main logic* function should also handle logging/publishing some info about the current game / state of the agent/robot at each step
-- [ ] Shutdown the matchess_manager and the player_stockfish nodes by listening to the *'matchess/game_status' topic* and catch the *shutdown node error* in the main loop with a "try except" around the `rclpy.spin(node_name)`
+- [X] Shutdown the matchess_manager node by listening to the *'matchess/game_status' topic* and catch the *shutdown node error* in the main loop with a "try except" around the `rclpy.spin(node_name)`
+- [X] Shut down the player_stockfish node just like the chess piece agents are shut down: pub msg to the *'matchess/game_status' topic* and catch the *shutdown node error* in the main loop with a "try except" around the `rclpy.spin(node_name)`

@@ -8,6 +8,8 @@ from std_msgs.msg import String
 from matchess_interfaces.msg import ChessMove # type: ignore
 from matchess_interfaces.msg import ChessMoveVote # type: ignore
 
+from .game_status import GAME_STATUS
+from matchess_interfaces.msg import GameStatus # type: ignore
 
 ##### Used to implement the Stockfish opponent:
 import chess.engine
@@ -42,6 +44,15 @@ class PlayerStockfish(Node):
         self.prev_move_uci = ''
         # Save the random move selected by this agent:
         self.chosen_move_uci = ''
+
+        self.game_status = GAME_STATUS.OK
+        self.engine_status_pub = self.create_publisher(
+            GameStatus,
+            'matchess/game_status',
+            self.qos)
+        engine_timer_period = 0.5  # seconds
+        self.timer = self.create_timer(engine_timer_period, self.main_logic)
+
         
         if self.piece_color == chess.WHITE:
             engine_result = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1))
@@ -93,6 +104,7 @@ class PlayerStockfish(Node):
                 if self.engine_board.is_game_over():
                     # TODO: handle rewards (and closing down the game properly???)
                     self.get_logger().info('Game over with move: "%s"' % msg.uci)
+                    self.game_status = GAME_STATUS.STOP
                     self.engine.quit()  # NOTE: needed to quit the engine?
 
                     # # TODO: add following line to destroy the node???
@@ -117,6 +129,16 @@ class PlayerStockfish(Node):
             # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentpos)
             self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
 
+    def main_logic(self):
+        if self.game_status == GAME_STATUS.STOP:
+            # Pub msg about game status before shutting down node:
+            msg_game_status = GameStatus()
+            msg_game_status.status_str = self.game_status.name
+            msg_game_status.status_int = self.game_status.value
+            self.engine_status_pub.publish(msg_game_status)
+            raise Exception("Shutting down node, Game over")
+
+
 
 def main(args=None):
     rclpy.init(args=None)
@@ -125,7 +147,13 @@ def main(args=None):
     # NOTE: this node manages input/output between the matchessbot and the chess game simulation?
     player_stockfish = PlayerStockfish()
 
-    rclpy.spin(player_stockfish)
+    try:
+        rclpy.spin(player_stockfish)
+    except Exception as err:
+        rclpy.logging.get_logger("node shutdown").info(f"{err.args}")
+    except KeyboardInterrupt:
+        pass
+
 
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically
