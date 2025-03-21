@@ -65,20 +65,20 @@ class PlayerStockfish(Node):
         self.timer = self.create_timer(engine_timer_period, self.main_logic)
 
         
-        # if self.piece_color == chess.WHITE:
-        #     engine_result = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1))
+        if self.piece_color == chess.WHITE:
+            engine_result = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1))
             
-        #     self.chosen_move_uci = engine_result.move.uci()
-        #     # self.engine_board.push(engine_result.move)
+            self.chosen_move_uci = engine_result.move.uci()
+            # self.engine_board.push(engine_result.move)
 
-        #     # msg_out = ChessMoveVote()
-        #     # msg_out.uci = self.chosen_move_uci
-        #     # msg_out.agentname = self.agentname
-        #     # msg_out.agentcount = 1
+            # msg_out = ChessMoveVote()
+            # msg_out.uci = self.chosen_move_uci
+            # msg_out.agentname = self.agentname
+            # msg_out.agentcount = 1
 
-        #     # self.publisher_.publish(msg_out)
-        #     # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentname)
-        #     # self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
+            # self.publisher_.publish(msg_out)
+            # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentname)
+            # self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
         
     def listener_callback(self, msg):
         state_transition_observed = False

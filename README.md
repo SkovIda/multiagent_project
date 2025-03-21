@@ -17,8 +17,9 @@ git clone git@github.com:SkovIda/multiagent_project.git
 1. Launch all 16 pieces on a team:
     - All white pieces: `MATCHESS_TEAM_COLOR=white ros2 launch matchessbot chess_piece_agent_launch_all.launch.py`
     - All black pieces: `MATCHESS_TEAM_COLOR=black ros2 launch matchessbot chess_piece_agent_launch_all.launch.py`
-1. Run the node that acts as the opposing player (it uses the Stockfish engine to select its moves and is currently hardcoded to always play as black):
-    1. Stockfish engine player: `ros2 run matchessbot player_stockfish`
+1. Run the node that acts as the opposing player (it uses the Stockfish engine to select its moves):
+    - Stockfish engine playing as white: `SINGLE_AGENT_COLOR=white ros2 launch matchessbot player_stockfish.launch.py`
+    - Stockfish engine playing as black: `SINGLE_AGENT_COLOR=black ros2 launch matchessbot player_stockfish.launch.py`
 1. Init new game: `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/out matchess_interfaces/msg/ChessMove "uci: ''" --once --qos-reliability reliable`
 
 
