@@ -4,26 +4,37 @@ import rclpy
 from rclpy.node import Node
 import rclpy.qos
 
-from std_msgs.msg import String
+from rcl_interfaces.msg import ParameterType, ParameterDescriptor
+
+# from std_msgs.msg import String
+
+import chess.engine
+
 from matchess_interfaces.msg import ChessMove # type: ignore
 from matchess_interfaces.msg import ChessMoveVote # type: ignore
 
 from .game_status import GAME_STATUS
 from matchess_interfaces.msg import GameStatus # type: ignore
+from . import chess_utils
 
-##### Used to implement the Stockfish opponent:
-import chess.engine
 
 class PlayerStockfish(Node):
     def __init__(self):
         super().__init__('player_stockfish')
+        
+        # TODO: Make self.piece_color into a configurable variable/paramer.
+        # # self.piece_color = chess.WHITE
+        # self.piece_color = chess.BLACK
+
+        self.declare_parameters(
+            namespace='',
+            parameters=[
+                ('piece_color', None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING, description='The color of the chess pieces controlled by this player')),
+            ])
+        piece_color_param = self.get_parameter('piece_color').get_parameter_value().string_value
+        self.piece_color = chess_utils.piece_color_from_str(piece_color_param)
 
         self.agentname = 'engine'
-
-        # TODO: Make self.piece_color into a configurable variable/paramer.
-        # self.piece_color = chess.WHITE
-        self.piece_color = chess.BLACK
-
 
         self.qos = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=1)
         self.subscription = self.create_subscription(
@@ -54,20 +65,20 @@ class PlayerStockfish(Node):
         self.timer = self.create_timer(engine_timer_period, self.main_logic)
 
         
-        if self.piece_color == chess.WHITE:
-            engine_result = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1))
+        # if self.piece_color == chess.WHITE:
+        #     engine_result = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1))
             
-            self.chosen_move_uci = engine_result.move.uci()
-            # self.engine_board.push(engine_result.move)
+        #     self.chosen_move_uci = engine_result.move.uci()
+        #     # self.engine_board.push(engine_result.move)
 
-            # msg_out = ChessMoveVote()
-            # msg_out.uci = self.chosen_move_uci
-            # msg_out.agentname = self.agentname
-            # msg_out.agentcount = 1
+        #     # msg_out = ChessMoveVote()
+        #     # msg_out.uci = self.chosen_move_uci
+        #     # msg_out.agentname = self.agentname
+        #     # msg_out.agentcount = 1
 
-            # self.publisher_.publish(msg_out)
-            # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentname)
-            # self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
+        #     # self.publisher_.publish(msg_out)
+        #     # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentname)
+        #     # self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
         
     def listener_callback(self, msg):
         state_transition_observed = False
@@ -141,7 +152,7 @@ class PlayerStockfish(Node):
 
 
 def main(args=None):
-    rclpy.init(args=None)
+    rclpy.init(args=args)
 
     # Init Matchess Game Manager Node
     # NOTE: this node manages input/output between the matchessbot and the chess game simulation?

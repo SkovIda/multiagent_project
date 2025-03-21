@@ -1,0 +1,3 @@
+player_stockfish:
+  ros__parameters:
+    piece_color: white
