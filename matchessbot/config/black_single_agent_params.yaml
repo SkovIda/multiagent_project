@@ -1,3 +1,4 @@
 player_stockfish:
   ros__parameters:
     piece_color: black
+    engine_path: /usr/games/stockfish

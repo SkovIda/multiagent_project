@@ -19,8 +19,14 @@ def generate_launch_description():
     piece_color_launch_arg = DeclareLaunchArgument(
         'piece_color', default_value=TextSubstitution(text='white')
     )
+    engine_path_launch_arg = DeclareLaunchArgument(
+        'engine_path', default_value=TextSubstitution(text="/usr/games/stockfish")
+    )
+
+
     ld = LaunchDescription()
     ld.add_action(piece_color_launch_arg)
+    ld.add_action(engine_path_launch_arg)
 
     config_filename = ''
     COLOUR = os.environ.get('SINGLE_AGENT_COLOR', 'WHITE').lower()

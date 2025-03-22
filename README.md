@@ -46,3 +46,18 @@ git clone git@github.com:SkovIda/multiagent_project.git
         1. [ ] *main logic* function should also handle logging/publishing some info about the current game / state of the agent/robot at each step
 - [X] Shutdown the matchess_manager node by listening to the *'matchess/game_status' topic* and catch the *shutdown node error* in the main loop with a "try except" around the `rclpy.spin(node_name)`
 - [X] Shut down the player_stockfish node just like the chess piece agents are shut down: pub msg to the *'matchess/game_status' topic* and catch the *shutdown node error* in the main loop with a "try except" around the `rclpy.spin(node_name)`
+
+- [X] Load chess engine in player_stockfish from file path in config:
+    1. [X] Add engine path to ros-params in config files: `config/white_single_agent_params.yaml` and `config/white_single_agent_params.yaml`
+    1. [X] Load engine from that path in player_stockfish instead of hardcoded path
+- [ ] Make a general single-agent player for running different chess engines with the same single-agent player node:
+    <!-- - that can use different chess engines where it is possible to launch a single-agent player with the same launch file by adding a `SINGLE_AGENT_PLAYER_TYPE` variable to the input args of the launch file: -->
+    1. [ ] Create a new chess player node class: chess_player_agent.py (same functionality as the player_stockfish node except for the following changes)
+    1. [ ] Make a new launch file: `single_agent_player.launch.py`
+        - [ ] Same as `player_stockfish.launch.py` but has an additional environment variable: `SINGLE_AGENT_PLAYER_TYPE`
+        - [ ] Use this environment variable to load differnt chess engines, which will be passed as a parameter to the `chess_player_agent.py` to the single-agent player
+    1. [ ] Add `engine_path` parameter to node and config files: `config/white_single_agent_params.yaml` and `config/white_single_agent_params.yaml`
+    1. [ ] use value of `engine_path` param to load chess engine in node
+- Add visualization to the framework:
+    1. pub game state and voting round info from the matchess_manager node to `matchess/visualization`
+    1. pub game state and "decision-making info" (i.e. votes and network) of the chess piece agents

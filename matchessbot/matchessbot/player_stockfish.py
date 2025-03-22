@@ -30,9 +30,12 @@ class PlayerStockfish(Node):
             namespace='',
             parameters=[
                 ('piece_color', None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING, description='The color of the chess pieces controlled by this player')),
+                ('engine_path', None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING, description='The file path to the UCI chess engine that this player use to make decisions')),
             ])
         piece_color_param = self.get_parameter('piece_color').get_parameter_value().string_value
         self.piece_color = chess_utils.piece_color_from_str(piece_color_param)
+
+        self.engine_path = self.get_parameter('engine_path').get_parameter_value().string_value
 
         self.agentname = 'engine'
 
@@ -50,7 +53,8 @@ class PlayerStockfish(Node):
             'matchess/in',
             self.qos)
         
-        self.engine = chess.engine.SimpleEngine.popen_uci(r"/usr/games/stockfish")
+        # self.engine = chess.engine.SimpleEngine.popen_uci(r"/usr/games/stockfish")
+        self.engine = chess.engine.SimpleEngine.popen_uci(self.engine_path)
         self.engine_board = chess.Board()
         self.prev_move_uci = ''
         # Save the random move selected by this agent:
