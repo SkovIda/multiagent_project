@@ -20,7 +20,18 @@ git clone git@github.com:SkovIda/multiagent_project.git
 1. Run the node that acts as the opposing player (it uses the Stockfish engine to select its moves):
     - Stockfish engine playing as white: `SINGLE_AGENT_COLOR=white ros2 launch matchessbot player_stockfish.launch.py`
     - Stockfish engine playing as black: `SINGLE_AGENT_COLOR=black ros2 launch matchessbot player_stockfish.launch.py`
-1. Init new game: `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/out matchess_interfaces/msg/ChessMove "uci: ''" --once --qos-reliability reliable`
+1. Init new game:
+    <!-- `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/out matchess_interfaces/msg/ChessMove "uci: ''" --once --qos-reliability reliable` -->
+    1. source the workspace: `source ros2ws/install/setup.bash`
+    1. Reset the state of the game to the standard chess starting position for all agents in the game:
+        ```
+        RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/game_status_cmd matchess_interfaces/msg/GameStatus "{status_str: 'RESET_GAME_STATE',status_int: 1}" --once --qos-reliability reliable --qos-durability transient_local
+        ```
+    1. Tell the agents to start the game from the current game state of the agents
+        ```
+        RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/game_status_cmd matchess_interfaces/msg/GameStatus "{status_str: 'START_GAME',status_int: 2}" --once --qos-reliability reliable --qos-durability transient_local
+        ```
+
 
 
 ## Implemented Program Currently has the Following Features:
@@ -36,28 +47,24 @@ git clone git@github.com:SkovIda/multiagent_project.git
 
 
 ## TODO
-- [X] Shutdown the chess piece agent (which is a single node) when it knows that the game is over:
-    1. [X] Add publisher to chess_piece_agent node that publishes to a "general system status" topic. 
-        - [X] Create a *GameStatus.msg* in the "matchess_interfaces" package. Should contain an int and a string representing the *game status code*
-    1. [X] Add a *main logic* callback to the chess_piece_agent node (which is just a timer_callback function). This function is the main loop for the actual robot. It should contain the following:
-        1. [X] Comment that says: "main robot logic goes here". (NOTE: the main robot logic is the control loop (motor control), make robot move to "home position" on start up, what the robot should do before shutdown, etc.)
-        1. [X] Publish a message to the *"general system status" topic:* 'matchess/game_status' with the overall status of the game (from the agent's perspective): NONE, OK, STOP
-        1. [X] Raise a *shutdown node error* in *main logic* callback when the *game-over flag* is set and catch this error in the main loop with a "try catch" around the `rclpy.spin(node_name)` in the main function
-        1. [ ] *main logic* function should also handle logging/publishing some info about the current game / state of the agent/robot at each step
-- [X] Shutdown the matchess_manager node by listening to the *'matchess/game_status' topic* and catch the *shutdown node error* in the main loop with a "try except" around the `rclpy.spin(node_name)`
-- [X] Shut down the player_stockfish node just like the chess piece agents are shut down: pub msg to the *'matchess/game_status' topic* and catch the *shutdown node error* in the main loop with a "try except" around the `rclpy.spin(node_name)`
-
 - [X] Load chess engine in player_stockfish from file path in config:
     1. [X] Add engine path to ros-params in config files: `config/white_single_agent_params.yaml` and `config/white_single_agent_params.yaml`
     1. [X] Load engine from that path in player_stockfish instead of hardcoded path
+- [X] Make the manager control the overall game status of the nodes, such that game state of the nodes are controlled from the matchess_manager:
+    - The *matchess_manager* should be able to send commands to the *chess_piece_agent* to change its state:
+        - GAME_STATUS.SET_GAME_STATE_FROM_HIST, GAME_STATUS.START_GAME, GAME_STATUS.KILL_NODE, GAME_STATUS.RESET_GAME_STATE
+    - The *chess_piece_agent* nodes should be able to change its own game_status to one of the following:
+        - GAME_STATUS.NONE, GAME_STATUS.IDLE, GAME_STATUS.READY_TO_PLAY, GAME_STATUS.GAME_IN_PROGRESS, GAME_STATUS.GAME_OVER
+- [ ] Debug code that setup new game from a later stage of a game, which is set up from a list of UCI moves:
+    - [ ] Uses a GAME_STATUS command used to set the agent's game states from a list of UCI moves that was played to reach it: `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/game_status_cmd matchess_interfaces/msg/GameStatus "{status_str: 'SET_GAME_STATE_FROM_HIST',status_int: 8}" --once --qos-reliability reliable --qos-durability transient_local`
 - [ ] Make a general single-agent player for running different chess engines with the same single-agent player node:
-    <!-- - that can use different chess engines where it is possible to launch a single-agent player with the same launch file by adding a `SINGLE_AGENT_PLAYER_TYPE` variable to the input args of the launch file: -->
     1. [ ] Create a new chess player node class: chess_player_agent.py (same functionality as the player_stockfish node except for the following changes)
     1. [ ] Make a new launch file: `single_agent_player.launch.py`
         - [ ] Same as `player_stockfish.launch.py` but has an additional environment variable: `SINGLE_AGENT_PLAYER_TYPE`
         - [ ] Use this environment variable to load differnt chess engines, which will be passed as a parameter to the `chess_player_agent.py` to the single-agent player
     1. [ ] Add `engine_path` parameter to node and config files: `config/white_single_agent_params.yaml` and `config/white_single_agent_params.yaml`
     1. [ ] use value of `engine_path` param to load chess engine in node
-- Add visualization to the framework:
+- [ ] Add feature for evaluating performance of the MAS with various chess puzzles
+- [ ] Add visualization to the framework:
     1. pub game state and voting round info from the matchess_manager node to `matchess/visualization`
     1. pub game state and "decision-making info" (i.e. votes and network) of the chess piece agents

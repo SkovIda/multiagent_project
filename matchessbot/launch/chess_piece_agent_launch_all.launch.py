@@ -21,7 +21,6 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
 def generate_launch_description():
-    os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
     # config = os.path.join(
     #     get_package_share_directory('matchessbot'),
     #     'config',
@@ -56,9 +55,11 @@ def generate_launch_description():
     COLOUR = os.environ.get('MATCHESS_TEAM_COLOR', 'WHITE').lower()
     if COLOUR == 'white':
         # pieces = white_peices
+        team_namespace = 'white'
         config_filename = 'white_pieces_params.yaml'
     elif COLOUR == 'black':
         # pieces = black_pieces
+        team_namespace = 'black'
         config_filename = 'black_pieces_params.yaml'
     else:
         print(f'Unknown color set [{COLOUR}]')
@@ -72,14 +73,29 @@ def generate_launch_description():
     )
 
     for agent_name in pieces:
+        # node = Node(
+        #         package='matchessbot',
+        #         #namespace='white',
+        #         executable='chess_piece_agent',
+        #         # name=agent_name,
+        #         name= agent_name,
+        #         parameters = [config],
+        #         arguments=arguments
+        #     )
         node = Node(
                 package='matchessbot',
-                # namespace='white',
+                namespace=team_namespace,
                 executable='chess_piece_agent',
-                # name=agent_name,
                 name= agent_name,
                 parameters = [config],
-                arguments=arguments
+                arguments=arguments,
+                remappings=[
+                    ('/' + team_namespace + '/matchess/in', '/matchess/in'),
+                    ('/' + team_namespace + '/matchess/out', '/matchess/out'),
+                    ('/' + team_namespace + '/matchess/game_status', '/matchess/game_status'),
+                    ('/' + team_namespace + '/matchess/game_status_cmd', '/matchess/game_status_cmd'),
+                    ('/' + team_namespace + '/matchess/game_hist' ,'/matchess/game_hist'),
+                ]
             )
         ld.add_action(node)
 

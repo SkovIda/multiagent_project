@@ -1,12 +1,11 @@
 import json
 
 import rclpy
+import rclpy.logging
 from rclpy.node import Node
 import rclpy.qos
 
 from rcl_interfaces.msg import ParameterType, ParameterDescriptor
-
-# from std_msgs.msg import String
 
 import chess.engine
 
@@ -15,16 +14,14 @@ from matchess_interfaces.msg import ChessMoveVote # type: ignore
 
 from .game_status import GAME_STATUS
 from matchess_interfaces.msg import GameStatus # type: ignore
+from matchess_interfaces.msg import GameHist  # type: ignore
+
 from . import chess_utils
 
 
 class PlayerStockfish(Node):
     def __init__(self):
         super().__init__('player_stockfish')
-        
-        # TODO: Make self.piece_color into a configurable variable/paramer.
-        # # self.piece_color = chess.WHITE
-        # self.piece_color = chess.BLACK
 
         self.declare_parameters(
             namespace='',
@@ -39,7 +36,12 @@ class PlayerStockfish(Node):
 
         self.agentname = 'engine'
 
-        self.qos = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=1)
+        self.qos = rclpy.qos.QoSProfile(
+            reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, 
+            history=rclpy.qos.HistoryPolicy.KEEP_LAST, 
+            depth=1,
+            durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL
+            )
         self.subscription = self.create_subscription(
             ChessMove,
             'matchess/out',
@@ -53,14 +55,30 @@ class PlayerStockfish(Node):
             'matchess/in',
             self.qos)
         
-        # self.engine = chess.engine.SimpleEngine.popen_uci(r"/usr/games/stockfish")
         self.engine = chess.engine.SimpleEngine.popen_uci(self.engine_path)
         self.engine_board = chess.Board()
         self.prev_move_uci = ''
-        # Save the random move selected by this agent:
+        
+        # Save the move that this agent selects:
         self.chosen_move_uci = ''
+        self.claim_draw_allowed = True
 
-        self.game_status = GAME_STATUS.OK
+        # Sub/pub communication with MatchessManager for setting up new games
+        self.game_status_cmd_sub = self.create_subscription(
+            GameStatus,
+            'matchess/game_status_cmd',
+            self.matchess_game_cmd_sub,
+            self.qos)
+        self.game_status_cmd_sub  # prevent unused variable warning
+
+        self.game_hist_sub = self.create_subscription(
+            GameHist,
+            'matchess/game_hist',
+            self.matchess_game_hist_sub,
+            self.qos
+        )
+        self.game_hist_sub  # prevent unused variable warning
+
         self.engine_status_pub = self.create_publisher(
             GameStatus,
             'matchess/game_status',
@@ -68,90 +86,153 @@ class PlayerStockfish(Node):
         engine_timer_period = 0.5  # seconds
         self.timer = self.create_timer(engine_timer_period, self.main_logic)
 
-        
-        if self.piece_color == chess.WHITE:
-            engine_result = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1))
-            
-            self.chosen_move_uci = engine_result.move.uci()
-            # self.engine_board.push(engine_result.move)
+        self.game_status = GAME_STATUS.IDLE
+        self.game_status_cmd = GAME_STATUS.NONE
+    
+    def update_game_state(self, obs_move_uci):
+        if chess.Move.from_uci(obs_move_uci) in self.engine_board.legal_moves:
+            # Update internal state of the game:
+            last_chess_move = self.engine_board.push_uci(obs_move_uci) # NOTE: board.push_uci() throws an error if the move is invalid
 
-            # msg_out = ChessMoveVote()
-            # msg_out.uci = self.chosen_move_uci
-            # msg_out.agentname = self.agentname
-            # msg_out.agentcount = 1
+            # Verify state transistion is valid:
+            if self.engine_board.is_valid():
+                self.get_logger().debug('Accept valid move obs from manager: "%s"' % obs_move_uci)
+                self.get_logger().debug('New state: "%s"' % self.engine_board.fen())
+            else:
+                self.get_logger().debug('Reject invalid move from manager: "%s"' % obs_move_uci)
+    
+    def choose_next_uci_move(self):
+        if self.engine_board.turn == self.piece_color:
+            self.chosen_move_uci = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1)).move.uci()
+        return
 
-            # self.publisher_.publish(msg_out)
-            # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentname)
-            # self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
-        
-    def listener_callback(self, msg):
-        state_transition_observed = False
-        if self.prev_move_uci == msg.uci:
-            if self.prev_move_uci != "" and (self.piece_color != chess.WHITE):
-                return
-            # return
-        else:
-            self.prev_move_uci = msg.uci
-            state_transition_observed = True
-            self.chosen_move_uci = ''
-            self.get_logger().info('Current state: "%s"' % self.engine_board.fen())
-
-        # Log the incomming message:
-        self.get_logger().info('I heard: "%s"' % msg.uci)
-
-        if msg.uci != "":
-            # Verify that the opponent's move is legal:
-            if chess.Move.from_uci(msg.uci) in self.engine_board.legal_moves:
-                # Update internal state of the game:
-                opponent_move = self.engine_board.push_uci(msg.uci) # NOTE: board.push_uci() throws an error if the move is invalid
-
-                # Verify state transistion is valid:
-                if self.engine_board.is_valid():
-                    self.get_logger().info('Accept valid move obs from manager: "%s"' % msg.uci)
-                    
-                    # NOTE: Temp to ftest that state is updated:
-                    # self.get_logger().info('New state: "%s"' % self.engine_board.board_fen())
-                    self.get_logger().info('New state: "%s"' % self.engine_board.fen())
-                else:
-                    self.get_logger().info('Reject invalid move from manager: "%s"' % msg.uci)
-
-                # Check if game is over:
-                if self.engine_board.is_game_over():
-                    # TODO: handle rewards (and closing down the game properly???)
-                    self.get_logger().info('Game over with move: "%s"' % msg.uci)
-                    self.game_status = GAME_STATUS.STOP
-                    self.engine.quit()  # NOTE: needed to quit the engine?
-
-                    # # TODO: add following line to destroy the node???
-                    # self.destroy_node()
-                    return
-
+    def pub_agent_decision(self, state_transition_observed):
         if self.engine_board.turn == self.piece_color:
             if state_transition_observed:
-                # # Choose a random move to vote for:
-                # legal_move_count = self.board_state.legal_moves.count()
-                # random_move_idx = random.sample(range(legal_move_count), 1)[0]
-                # chosen_move = list(self.board_state.legal_moves)[random_move_idx]
-                self.chosen_move_uci = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1)).move.uci()
+                self.choose_next_uci_move()
 
-            # NOTE: This is temporary, should be peer-to-peer communication (could be centralized so the king manages the coordination for the team???
+                temp_debug_log = 'Agent: ' + self.agentname + '\tMoveVote: ' + self.chosen_move_uci
+                self.get_logger().debug(temp_debug_log)
+
             msg_out = ChessMoveVote()
             msg_out.uci = self.chosen_move_uci
             msg_out.agentname = self.agentname
             msg_out.agentcount = 1
 
             self.publisher_.publish(msg_out)
-            # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentpos)
-            self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
+            self.get_logger().debug('Pub MoveVote: "%s"' % msg_out.uci)
+        return
 
-    def main_logic(self):
+
+    def listener_callback(self, msg):
         if self.game_status == GAME_STATUS.STOP:
+            return
+        
+        if self.game_status == GAME_STATUS.KILL_NODE:
+            return
+        
+        if self.game_status != GAME_STATUS.GAME_IN_PROGRESS:
+            return
+        
+        state_transition_observed = False
+        if self.prev_move_uci == msg.uci:
+            if self.prev_move_uci != "" and (self.piece_color != chess.WHITE):
+                return
+        else:
+            self.prev_move_uci = msg.uci
+            state_transition_observed = True
+            self.chosen_move_uci = ''
+            self.get_logger().debug('Current state: "%s"' % self.engine_board.fen())
+
+        # Log the incomming message:
+        self.get_logger().debug('Recieved Obs. Move: "%s"' % msg.uci)
+
+        if msg.uci != "":
+            self.update_game_state(msg.uci)
+
+            # Check if game is over:
+            if self.engine_board.is_game_over(claim_draw=self.claim_draw_allowed):
+                self.get_logger().debug('Game over with move: "%s"' % msg.uci)
+                
+                self.game_status = GAME_STATUS.GAME_OVER
+
+                self.engine.quit()  # NOTE: need to quit the engine
+                return
+        
+        self.pub_agent_decision(state_transition_observed)
+
+    def matchess_game_cmd_sub(self, game_status_cmd_msg):
+        self.get_logger().info('I heard: "%s"' % game_status_cmd_msg.status_str)
+        self.game_status_cmd = GAME_STATUS(game_status_cmd_msg.status_int)
+
+    def matchess_game_hist_sub(self, game_hist_uci_msg):
+        if self.game_status == GAME_STATUS.SET_GAME_STATE_FROM_HIST:
+            self.reset_game()
+            for uci_move_str in game_hist_uci_msg.move_hist_uci:
+                self.update_game_state(uci_move_str)
+
+                # Check if game is over:
+                if self.engine_board.is_game_over(claim_draw=self.claim_draw_allowed):
+                    # TODO: handle rewards
+                    self.get_logger().info('Game over with move: "%s"' % uci_move_str)
+
+                    # Update game_status:
+                    self.game_status = GAME_STATUS.GAME_OVER # This will destroy the node
+                    return
+            
+            self.game_status = GAME_STATUS.READY_TO_PLAY
+
+    def reset_game(self):
+        self.engine_board = chess.Board()
+        self.engine_board.reset()
+        # self.is_alive = True
+
+    def pub_game_status(self):
+        msg_game_status = GameStatus()
+        msg_game_status.status_str = self.game_status.name
+        msg_game_status.status_int = self.game_status.value
+        self.engine_status_pub.publish(msg_game_status)
+        return
+    
+    def main_logic(self):
+        execute_comand = False
+
+        if self.game_status_cmd != GAME_STATUS.NONE:
+            # Commands from matchess manager that should always be executed no matter what state the agent is in:
+            if self.game_status_cmd == GAME_STATUS.KILL_NODE or self.game_status_cmd == GAME_STATUS.STOP:
+                execute_comand = True
+            elif self.game_status_cmd == GAME_STATUS.RESET_GAME_STATE:
+                self.reset_game()
+                self.game_status = GAME_STATUS.READY_TO_PLAY
+                self.game_status_cmd = GAME_STATUS.NONE
+            elif self.game_status_cmd == GAME_STATUS.SET_GAME_STATE_FROM_HIST:
+                execute_comand = True
+            elif self.game_status_cmd == GAME_STATUS.START_GAME:
+                if self.game_status == GAME_STATUS.READY_TO_PLAY:
+                    # self.choose_next_uci_move()
+                    self.pub_agent_decision(state_transition_observed=True)
+                    self.game_status = GAME_STATUS.GAME_IN_PROGRESS
+                    self.game_status_cmd = GAME_STATUS.NONE
+                    # execute_comand = True
+            
+            if execute_comand:
+                self.game_status = self.game_status_cmd
+                self.game_status_cmd = GAME_STATUS.NONE
+                execute_comand = False
+
+        # Change agent state to execute the last command recieved from the matchess manager:
+        if self.game_status == GAME_STATUS.KILL_NODE:
             # Pub msg about game status before shutting down node:
-            msg_game_status = GameStatus()
-            msg_game_status.status_str = self.game_status.name
-            msg_game_status.status_int = self.game_status.value
-            self.engine_status_pub.publish(msg_game_status)
+            # msg_game_status = GameStatus()
+            # msg_game_status.status_str = self.game_status.name
+            # msg_game_status.status_int = self.game_status.value
+            # self.engine_status_pub.publish(msg_game_status)
+            self.pub_game_status()
+
             raise Exception("Shutting down node, Game over")
+        elif self.game_status == GAME_STATUS.GAME_OVER:
+            self.pub_game_status()
+        
 
 
 
@@ -169,7 +250,6 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
 
-
     # Destroy the node explicitly
     # (optional - otherwise it will be done automatically
     # when the garbage collector destroys the node object)
@@ -178,3 +258,163 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+
+# class PlayerStockfish(Node):
+#     def __init__(self):
+#         super().__init__('player_stockfish')
+        
+#         # TODO: Make self.piece_color into a configurable variable/paramer.
+#         # # self.piece_color = chess.WHITE
+#         # self.piece_color = chess.BLACK
+
+#         self.declare_parameters(
+#             namespace='',
+#             parameters=[
+#                 ('piece_color', None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING, description='The color of the chess pieces controlled by this player')),
+#                 ('engine_path', None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING, description='The file path to the UCI chess engine that this player use to make decisions')),
+#             ])
+#         piece_color_param = self.get_parameter('piece_color').get_parameter_value().string_value
+#         self.piece_color = chess_utils.piece_color_from_str(piece_color_param)
+
+#         self.engine_path = self.get_parameter('engine_path').get_parameter_value().string_value
+
+#         self.agentname = 'engine'
+
+#         self.qos = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, history=rclpy.qos.HistoryPolicy.KEEP_LAST, depth=1)
+#         self.subscription = self.create_subscription(
+#             ChessMove,
+#             'matchess/out',
+#             self.listener_callback,
+#             self.qos)
+#         self.subscription  # prevent unused variable warning
+
+
+#         self.publisher_ = self.create_publisher(
+#             ChessMoveVote,
+#             'matchess/in',
+#             self.qos)
+        
+#         self.engine = chess.engine.SimpleEngine.popen_uci(self.engine_path)
+#         self.engine_board = chess.Board()
+#         self.prev_move_uci = ''
+        
+#         # Save the random move selected by this agent:
+#         self.chosen_move_uci = ''
+
+#         self.game_status = GAME_STATUS.OK
+#         self.engine_status_pub = self.create_publisher(
+#             GameStatus,
+#             'matchess/game_status',
+#             self.qos)
+#         engine_timer_period = 0.5  # seconds
+#         self.timer = self.create_timer(engine_timer_period, self.main_logic)
+        
+#         if self.piece_color == chess.WHITE:
+#             engine_result = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1))
+            
+#             self.chosen_move_uci = engine_result.move.uci()
+#             # self.engine_board.push(engine_result.move)
+
+#             # msg_out = ChessMoveVote()
+#             # msg_out.uci = self.chosen_move_uci
+#             # msg_out.agentname = self.agentname
+#             # msg_out.agentcount = 1
+
+#             # self.publisher_.publish(msg_out)
+#             # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentname)
+#             # self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
+        
+#     def listener_callback(self, msg):
+#         state_transition_observed = False
+#         if self.prev_move_uci == msg.uci:
+#             if self.prev_move_uci != "" and (self.piece_color != chess.WHITE):
+#                 return
+#             # return
+#         else:
+#             self.prev_move_uci = msg.uci
+#             state_transition_observed = True
+#             self.chosen_move_uci = ''
+#             self.get_logger().info('Current state: "%s"' % self.engine_board.fen())
+
+#         # Log the incomming message:
+#         self.get_logger().info('I heard: "%s"' % msg.uci)
+
+#         if msg.uci != "":
+#             # Verify that the opponent's move is legal:
+#             if chess.Move.from_uci(msg.uci) in self.engine_board.legal_moves:
+#                 # Update internal state of the game:
+#                 opponent_move = self.engine_board.push_uci(msg.uci) # NOTE: board.push_uci() throws an error if the move is invalid
+
+#                 # Verify state transistion is valid:
+#                 if self.engine_board.is_valid():
+#                     self.get_logger().info('Accept valid move obs from manager: "%s"' % msg.uci)
+                    
+#                     # NOTE: Temp to ftest that state is updated:
+#                     # self.get_logger().info('New state: "%s"' % self.engine_board.board_fen())
+#                     self.get_logger().info('New state: "%s"' % self.engine_board.fen())
+#                 else:
+#                     self.get_logger().info('Reject invalid move from manager: "%s"' % msg.uci)
+
+#                 # Check if game is over:
+#                 if self.engine_board.is_game_over():
+#                     # TODO: handle rewards (and closing down the game properly???)
+#                     self.get_logger().info('Game over with move: "%s"' % msg.uci)
+#                     self.game_status = GAME_STATUS.STOP
+#                     self.engine.quit()  # NOTE: needed to quit the engine?
+
+#                     # # TODO: add following line to destroy the node???
+#                     # self.destroy_node()
+#                     return
+
+#         if self.engine_board.turn == self.piece_color:
+#             if state_transition_observed:
+#                 # # Choose a random move to vote for:
+#                 # legal_move_count = self.board_state.legal_moves.count()
+#                 # random_move_idx = random.sample(range(legal_move_count), 1)[0]
+#                 # chosen_move = list(self.board_state.legal_moves)[random_move_idx]
+#                 self.chosen_move_uci = self.engine.play(self.engine_board, chess.engine.Limit(time=0.1)).move.uci()
+
+#             # NOTE: This is temporary, should be peer-to-peer communication (could be centralized so the king manages the coordination for the team???
+#             msg_out = ChessMoveVote()
+#             msg_out.uci = self.chosen_move_uci
+#             msg_out.agentname = self.agentname
+#             msg_out.agentcount = 1
+
+#             self.publisher_.publish(msg_out)
+#             # self.get_logger().info('Publishing Vote by agent: "%s"' % msg_out.agentpos)
+#             self.get_logger().info('I vote for move: "%s"' % msg_out.uci)
+
+#     def main_logic(self):
+#         if self.game_status == GAME_STATUS.STOP:
+#             # Pub msg about game status before shutting down node:
+#             msg_game_status = GameStatus()
+#             msg_game_status.status_str = self.game_status.name
+#             msg_game_status.status_int = self.game_status.value
+#             self.engine_status_pub.publish(msg_game_status)
+#             raise Exception("Shutting down node, Game over")
+
+
+
+# def main(args=None):
+#     rclpy.init(args=args)
+
+#     # Init Matchess Game Manager Node
+#     # NOTE: this node manages input/output between the matchessbot and the chess game simulation?
+#     player_stockfish = PlayerStockfish()
+
+#     try:
+#         rclpy.spin(player_stockfish)
+#     except Exception as err:
+#         rclpy.logging.get_logger("node shutdown").info(f"{err.args}")
+#     except KeyboardInterrupt:
+#         pass
+
+
+#     # Destroy the node explicitly
+#     # (optional - otherwise it will be done automatically
+#     # when the garbage collector destroys the node object)
+#     player_stockfish.destroy_node()
+#     rclpy.shutdown()
+
+# if __name__ == '__main__':
+#     main()

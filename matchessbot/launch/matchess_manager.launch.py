@@ -7,7 +7,6 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    os.environ['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp' # fast dds loses messages in reliable mode
     arguments = []
     DEBUG_ENV = os.environ.get('MATCHESS_DEBUG', 'FALSE').lower() in ('true', '1', 't')
     if DEBUG_ENV:
