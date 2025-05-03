@@ -1,0 +1,10 @@
+**/__pycache__/*
+**/training_runs/*
+matchessbot/tools/*
+**/astar_search/*
+**/*.png
+**/matchessbot/test_results/*
+**/*.h5
+
+# not necessary
+**/matchessbot/chess_transformer/chess_transformer/dataset/*
