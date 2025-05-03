@@ -5,6 +5,7 @@ matchessbot/tools/*
 **/*.png
 **/matchessbot/test_results/*
 **/*.h5
+matchessbot/matchessbot/chessformers/*
 
 # not necessary
 **/matchessbot/chess_transformer/chess_transformer/dataset/*

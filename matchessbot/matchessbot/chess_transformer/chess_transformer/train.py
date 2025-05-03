@@ -1,0 +1,819 @@
+import os
+import pathlib
+import math
+import time
+
+from tqdm import tqdm
+import numpy as np
+
+import torch
+from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
+from torch.amp import GradScaler
+import torch.nn.functional as F
+
+
+from config import import_config
+from dataset import ChessDataset
+from model import ChessTransformerEncoder, LabelSmoothedCE
+
+# TODO: Use own training Transformer training functions instead of this!!!
+# NOTE: This code is an adaptation of: https://github.com/sgrvinod/chess-transformers
+
+def get_lr(step, d_model, warmup_steps, schedule="vaswani", decay=0.06, fixed=1e-5):
+    """
+    The LR schedule.
+
+    Args:
+
+        step (int): Training step number.
+
+        d_model (int): Size of vectors throughout the transformer model.
+
+        warmup_steps (int): Number of warmup steps where learning rate
+        is increased linearly; twice the value in the paper, as in the
+        official T2T repo.
+
+    Returns:
+
+        float: Updated learning rate.
+
+    Args:
+
+        step (int): Training step number.
+
+        d_model (int): Size of vectors throughout the transformer model.
+
+        warmup_steps (int): Number of warmup steps where learning rate
+        is increased linearly.
+
+        schedule (str, optional): The learning rate schedule. Defaults
+        to "vaswani", in which case the schedule in "Attention Is All
+        You Need", by Vasvani et. al. is followed. This version below is
+        twice the definition in the paper, as used in the official T2T
+        repository. If the schedule is "exp_decay", the learning rate is
+        exponentially decayed after the warmup stage.
+
+        decay (float, optional): The decay rate per 10000 training steps
+        for the "exp_decay" schedule. Defaults to 0.06, i.e. 6%.
+
+    Raises:
+
+        NotImplementedError: If the schedule is not one of "vaswani" or
+        "exp_decay".
+
+    Returns:
+
+        float: Updated learning rate.
+    """
+    if schedule == "vaswani":
+        lr = (
+            2.0
+            * math.pow(d_model, -0.5)
+            * min(math.pow(step, -0.5), step * math.pow(warmup_steps, -1.5))
+        )
+    elif schedule == "exp_decay":
+        if step <= warmup_steps:
+            lr = 1e-3 * step / warmup_steps
+        else:
+            lr = 1e-3 * ((1 - decay) ** ((step - warmup_steps) / 10000))
+    elif schedule == "fixed":
+        lr = fixed
+    else:
+        raise NotImplementedError
+
+    return lr
+
+
+def save_checkpoint(epoch, model, optimizer, config_name, checkpoint_folder, prefix=""):
+    """
+    Checkpoint saver. Each save overwrites any previous save.
+
+    Args:
+
+        epoch (int): The epoch number (0-indexed).
+
+        model (torch.nn.Module): The transformer model.
+
+        optimizer (torch.optim.adam.Adam): The optimizer.
+
+        config_name (str): The configuration name.
+
+        checkpoint_folder (str): The folder where checkpoints must be
+        saved.
+
+        prefix (str, optional): The checkpoint filename prefix. Defaults
+        to "".
+    """
+    state = {
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+    }
+    pathlib.Path(checkpoint_folder).mkdir(parents=True, exist_ok=True)
+    filename = prefix + config_name + ".pt"
+    torch.save(state, os.path.join(checkpoint_folder, filename))
+    print("Checkpoint saved.\n")
+
+def change_lr(optimizer, new_lr):
+    """
+    Change learning rate to a specified value.
+
+    Args:
+
+        optimizer (torch.optim.adam.Adam): Optimizer whose learning rate
+        must be changed.
+
+        new_lr (float): New learning rate.
+    """
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = new_lr
+
+
+def topk_accuracy(logits, targets, other_logits=None, other_targets=None, k=[1, 3, 5]):
+    """
+    Compute "top-k" accuracies for multiple values of "k".
+
+    Optionally, a second set of logits and targets, for a second
+    predicted variable, can be provided. In this case, probabilities
+    associated with both sets of logits are combined to arrive at the
+    best combinations of both predicted variables. A correct prediction
+    occurs when the combination of the targets is present in the top "k"
+    predicted combinations.
+
+    Args:
+
+        logits (torch.FloatTensor): Predicted logits, of size (N,
+        vocab_size).
+
+        targets (torch.LongTensor): Actual targets, of size (N).
+
+        other_logits (torch.FloatTensor, optional): Predicted logits for
+        a second predicted variable, if any, of size (N,
+        other_vocab_size). Defaults to None.
+
+        other_targets (torch.LongTensor, optional): Actual targets for a
+        second predicted variable, if any, of size (N). Defaults to
+        None.
+
+        k (list, optional): Values of "k". Defaults to [1, 3, 5].
+
+    Returns:
+
+        list: "Top-k" accuracies.
+    """
+    with torch.no_grad():
+        batch_size = logits.shape[0]
+        if other_logits is not None:
+            # Get indices corresponding to top-max(k) scores
+            probabilities = F.softmax(logits, dim=-1).unsqueeze(2)  # (N, vocab_size, 1)
+            other_probabilities = F.softmax(other_logits, dim=-1).unsqueeze(
+                1
+            )  # (N, 1, other_vocab_size)
+            combined_probabilities = torch.bmm(probabilities, other_probabilities).view(
+                batch_size, -1
+            )  # (N, vocab_size * other_vocab_size)
+            _, flattened_indices = combined_probabilities.topk(
+                k=max(k), dim=1
+            )  # (N, max(k))
+            indices = flattened_indices // other_logits.shape[-1]  # (N, max(k))
+            other_indices = flattened_indices % other_logits.shape[-1]  # (N, max(k))
+
+            # Expand targets to the same shape
+            targets = targets.unsqueeze(1).expand_as(indices)  # (N, max(k))
+            other_targets = other_targets.unsqueeze(1).expand_as(
+                other_indices
+            )  # (N, max(k))
+
+            # Get correct predictions
+            correct_predictions = (indices == targets) * (
+                other_indices == other_targets
+            )  # (N, max(k))
+
+        else:
+            # Get indices corresponding to top-max(k) scores
+            _, indices = logits.topk(k=max(k), dim=1)  # (N, max(k))
+
+            # Expand targets to the same shape
+            targets = targets.unsqueeze(1).expand_as(indices)  # (N, max(k))
+
+            # Get correct predictions
+            correct_predictions = indices == targets  # (N, max(k))
+
+        # Calculate top-k accuracies
+        topk_accuracies = [
+            correct_predictions[:, :k_value].sum().item() / batch_size for k_value in k
+        ]
+
+        return topk_accuracies
+
+
+class AverageMeter(object):
+    """
+    Keeps track of most recent, average, sum, and count of a metric.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        if type(val) != float:
+            raise TypeError(f"{val=}:{type(val)}")
+        if type(n) != int:
+            raise TypeError(f"{n=}:{type(n)}")
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+
+
+def train_model(CONFIG):
+    """
+    Training and validation.
+
+    Args:
+
+        config (dict): Configuration. See ./configs.
+    """
+
+    writer = SummaryWriter(log_dir=config['LOGS_FOLDER'])
+
+    # Initialize data-loaders
+    train_loader = DataLoader(
+        dataset=ChessDataset(
+            data_folder=CONFIG['DATA_FOLDER'],
+            h5_file=CONFIG['H5_FILE'],
+            split="train",
+            n_moves=CONFIG['N_MOVES'],
+        ),
+        batch_size=CONFIG['BATCH_SIZE'],
+        num_workers=CONFIG['NUM_WORKERS'],
+        pin_memory=CONFIG['PIN_MEMORY'],
+        prefetch_factor=CONFIG['PREFETCH_FACTOR'],
+        shuffle=True,
+    )
+    val_loader = DataLoader(
+        dataset=ChessDataset(
+            data_folder=CONFIG['DATA_FOLDER'],
+            h5_file=CONFIG['H5_FILE'],
+            split="val",
+            n_moves=CONFIG['N_MOVES'],
+        ),
+        batch_size=CONFIG['BATCH_SIZE'],
+        num_workers=CONFIG['NUM_WORKERS'],
+        pin_memory=CONFIG['PIN_MEMORY'],
+        prefetch_factor=CONFIG['PREFETCH_FACTOR'],
+        shuffle=False,
+    )
+
+    # Model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = ChessTransformerEncoder(CONFIG)
+    model = model.to(device)
+
+    # Optimizer
+    optimizer = torch.optim.Adam(
+        params=[p for p in model.parameters() if p.requires_grad],
+        lr=get_lr(
+            step=CONFIG['STEP'],
+            d_model=CONFIG['D_MODEL'],
+            warmup_steps=CONFIG['WARMUP_STEPS'],
+            schedule=CONFIG['LR_SCHEDULE'],
+            decay=CONFIG['LR_DECAY'],
+            ),
+        betas=CONFIG['BETAS'],
+        eps=CONFIG['EPSILON'],
+    )
+
+    # Load checkpoint if available
+    if CONFIG['TRAINING_CHECKPOINT'] is not None:
+        checkpoint = torch.load(
+            os.path.join(CONFIG['CHECKPOINT_FOLDER'], CONFIG['TRAINING_CHECKPOINT']),
+            weights_only=True,
+        )
+        start_epoch = checkpoint["epoch"] + 1
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        print("\nLoaded checkpoint from epoch %d.\n" % start_epoch)
+    else:
+        start_epoch = 0
+
+    # Loss function
+    criterion = LabelSmoothedCE(
+        eps=CONFIG['LABEL_SMOOTHING'], n_predictions=CONFIG['N_MOVES']
+    )
+    criterion = criterion.to(device)
+
+    # AMP scaler
+    scaler = GradScaler(device=device, enabled=CONFIG['USE_AMP'])
+
+    # Find total epochs to train
+    epochs = (CONFIG['N_STEPS'] // (len(train_loader) // CONFIG['BATCHES_PER_STEP'])) + 1
+
+    # Epochs
+    for epoch in range(start_epoch, epochs):
+        # Step
+        step = epoch * len(train_loader) // CONFIG['BATCHES_PER_STEP']
+
+        # One epoch's training
+        train_epoch(
+            train_loader=train_loader,
+            model=model,
+            criterion=criterion,
+            optimizer=optimizer,
+            scaler=scaler,
+            epoch=epoch,
+            epochs=epochs,
+            step=step,
+            writer=writer,
+            device=device,
+            CONFIG=CONFIG,
+        )
+
+        # One epoch's validation
+        validate_epoch(
+            val_loader=val_loader,
+            model=model,
+            criterion=criterion,
+            epoch=epoch,
+            writer=writer,
+            device=device,
+            CONFIG=CONFIG,
+        )
+
+        # Save checkpoint
+        save_checkpoint(epoch, model, optimizer, CONFIG['NAME'], CONFIG['CHECKPOINT_FOLDER'], prefix="checkpoint_epoch_" + str(epoch) + "_")
+
+
+
+def train_epoch(
+    train_loader,
+    model,
+    criterion,
+    optimizer,
+    scaler,
+    epoch,
+    epochs,
+    step,
+    writer,
+    device,
+    CONFIG,
+):
+    """
+    One epoch's training.
+
+    Args:
+
+        train_loader (torch.utils.data.DataLoader): Loader for training
+        data.
+
+        model (torch.nn.Module): Model.
+
+        criterion (torch.nn.Module): Loss criterion.
+
+        optimizer (torch.optim.adam.Adam): Optimizer.
+
+        scaler (torch.cuda.amp.GradScaler): AMP scaler.
+
+        epoch (int): Epoch number.
+
+        epochs (int): Total number of epochs.
+
+        step (int): Step number.
+
+        writer (torch.utils.tensorboard.SummaryWriter): TensorBoard
+        writer.
+
+        CONFIG (dict): Configuration.
+    """
+    model.train()  # training mode enables dropout
+
+    # Track some metrics
+    data_time = AverageMeter()  # data loading time
+    step_time = AverageMeter()  # forward prop. + back prop. time
+    losses = AverageMeter()  # loss
+    top1_accuracies = AverageMeter()  # top-1 accuracy of first move
+    top3_accuracies = AverageMeter()  # top-3 accuracy of first move
+    top5_accuracies = AverageMeter()  # top-5 accuracy of first move
+
+    # Starting time
+    start_data_time = time.time()
+    start_step_time = time.time()
+
+    train_losses = []
+
+    # Batches
+    # for i, batch in enumerate(train_loader):
+    for i, batch in tqdm(
+            enumerate(train_loader), desc=f"Training epoch: {epoch}/{epochs}", total=len(train_loader)
+        ):
+        # Move to default device
+        for key in batch:
+            batch[key] = batch[key].to(device)
+
+        # Time taken to load data
+        data_time.update(time.time() - start_data_time)
+
+        with torch.autocast(
+            device_type=device.type, dtype=torch.float16, enabled=CONFIG['USE_AMP']
+        ):
+            # (Direct) Move prediction models
+            if CONFIG['NAME'].startswith(("CT-ED-", "CT-E-")):
+                # Forward prop.
+                predicted_moves = model(batch)  # (N, n_moves, move_vocab_size)
+                # Note: n_moves is how many moves into the future we are
+                # targeting for modeling. For an Encoder-Decoder model,
+                # this might be max_move_sequence_length. For an
+                # Encoder-only model, this will be 1.
+
+                # Loss
+                loss = criterion(
+                    predicted=predicted_moves,  # (N, n_moves, move_vocab_size)
+                    targets=batch["moves"][:, 1:],  # (N, n_moves)
+                    lengths=batch["lengths"],  # (N, 1)
+                )  # scalar
+                # Note: We don't pass the first move (the prompt
+                # "<move>") as it is not a target/next-move of anything
+
+            # "From" and "To" square prediction models
+            elif CONFIG['NAME'].startswith(("CT-EFT-")):
+                # Forward prop.
+                predicted_from_squares, predicted_to_squares = model(
+                    batch
+                )  # (N, 1, 64), (N, 1, 64)
+
+                # Loss
+                loss = criterion(
+                    predicted=predicted_from_squares,
+                    targets=batch["from_squares"],
+                    lengths=batch["lengths"],
+                ) + criterion(
+                    predicted=predicted_to_squares,
+                    targets=batch["to_squares"],
+                    lengths=batch["lengths"],
+                )  # scalar
+
+            # Other models
+            else:
+                raise NotImplementedError
+
+            loss = loss / CONFIG['BATCHES_PER_STEP']
+
+        # Backward prop.
+        scaler.scale(loss).backward()
+
+        # Keep track of losses
+        losses.update(
+            loss.item() * CONFIG['BATCHES_PER_STEP'], batch["lengths"].sum().item()
+        )
+
+        # Keep track of accuracy (Direct) Move prediction models
+        if CONFIG['NAME'].startswith(("CT-ED-", "CT-E-")):
+            top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
+                logits=predicted_moves[:, 0, :],  # (N, move_vocab_size)
+                targets=batch["moves"][:, 1],  # (N)
+                k=[1, 3, 5],
+            )
+
+        elif CONFIG['NAME'].startswith(("CT-EFT-")):
+            top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
+                logits=predicted_from_squares[:, 0, :],  # (N, 64)
+                targets=batch["from_squares"].squeeze(1),  # (N)
+                other_logits=predicted_to_squares[:, 0, :],  # (N, 64)
+                other_targets=batch["to_squares"].squeeze(1),  # (N)
+                k=[1, 3, 5],
+            )
+
+        else:
+            raise NotImplementedError
+        top1_accuracies.update(top1_accuracy, batch["lengths"].shape[0])
+        top3_accuracies.update(top3_accuracy, batch["lengths"].shape[0])
+        top5_accuracies.update(top5_accuracy, batch["lengths"].shape[0])
+
+        # Update model (i.e. perform a training step) only after
+        # gradients are accumulated from batches_per_step batches
+        if (i + 1) % CONFIG['BATCHES_PER_STEP'] == 0:
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
+
+            # This step is now complete
+            step += 1
+
+            # Update learning rate after each step
+            change_lr(
+                optimizer,
+                new_lr=get_lr(
+                    step=step,
+                    d_model=CONFIG['D_MODEL'],
+                    warmup_steps=CONFIG['WARMUP_STEPS'],
+                    schedule=CONFIG['LR_SCHEDULE'],
+                    decay=CONFIG['LR_DECAY'],
+                ),
+            )
+
+            # Time taken for this training step
+            step_time.update(time.time() - start_step_time)
+
+            # Print status
+            if CONFIG['PRINT_FREQUENCY'] is not None:
+                if step % CONFIG['PRINT_FREQUENCY'] == 0:
+                    print(
+                        "Epoch {0}/{1}---"
+                        "Batch {2}/{3}---"
+                        "Step {4}/{5}---"
+                        "Data Time {data_time.val:.3f} ({data_time.avg:.3f})---"
+                        "Step Time {step_time.val:.3f} ({step_time.avg:.3f})---"
+                        "Loss {losses.val:.4f} ({losses.avg:.4f})---"
+                        "Top-5 {top5s.val:.4f} ({top5s.avg:.4f})".format(
+                            epoch + 1,
+                            epochs,
+                            i + 1,
+                            len(train_loader),
+                            step,
+                            CONFIG['N_STEPS'],
+                            step_time=step_time,
+                            data_time=data_time,
+                            losses=losses,
+                            top5s=top5_accuracies,
+                        )
+                    )
+
+            # Log to tensorboard
+            writer.add_scalar(
+                tag="train/loss", scalar_value=losses.val, global_step=step
+            )
+            writer.add_scalar(
+                tag="train/lr",
+                scalar_value=optimizer.param_groups[0]["lr"],
+                global_step=step,
+            )
+            writer.add_scalar(
+                tag="train/data_time", scalar_value=data_time.val, global_step=step
+            )
+            writer.add_scalar(
+                tag="train/step_time", scalar_value=step_time.val, global_step=step
+            )
+            writer.add_scalar(
+                tag="train/top1_accuracy",
+                scalar_value=top1_accuracies.val,
+                global_step=step,
+            )
+            writer.add_scalar(
+                tag="train/top3_accuracy",
+                scalar_value=top3_accuracies.val,
+                global_step=step,
+            )
+            writer.add_scalar(
+                tag="train/top5_accuracy",
+                scalar_value=top5_accuracies.val,
+                global_step=step,
+            )
+
+            train_losses.append(loss.detach().cpu().numpy())
+            writer.add_scalar(
+                tag="train/train_loss", scalar_value=np.mean(train_losses), global_step=step
+            )
+
+            # Reset step time
+            start_step_time = time.time()
+
+            # If this step is marked for saving a checkpoint for averaging, save checkpoint
+            if step in CONFIG['AVERAGE_STEPS']:
+                save_checkpoint(
+                    epoch,
+                    model,
+                    optimizer,
+                    CONFIG['NAME'],
+                    CONFIG['CHECKPOINT_FOLDER'],
+                    prefix="step" + str(step) + "_",
+                )
+
+        # print("\nAverage training loss: %.3f" % losses.avg)
+        # print("Training top-1 accuracy: %.3f" % top1_accuracies.avg)
+        # print("Training top-3 accuracy: %.3f" % top3_accuracies.avg)
+        # print("Training top-5 accuracy: %.3f\n" % top5_accuracies.avg)
+        
+        # Reset data time
+        start_data_time = time.time()
+
+        # if CONFIG['SAVE_CHECKPOINT_EPOCH_FEQUENCY'] is not None:
+        #     if epoch % CONFIG['SAVE_CHECKPOINT_EPOCH_FEQUENCY'] == 0:
+        #         save_checkpoint(
+        #             epoch,
+        #             model,
+        #             optimizer,
+        #             CONFIG['NAME'],
+        #             CONFIG['CHECKPOINT_FOLDER'],
+        #             prefix="step" + str(step) + "_",
+        #         )
+
+    
+    writer.add_scalar(
+        tag="train_epoch/avg_loss",
+        scalar_value=losses.avg,
+        global_step=epoch + 1,
+    )
+    writer.add_scalar(
+        tag="train_epoch/avg_accuracy_top5",
+        scalar_value=top5_accuracies.avg,
+        global_step=epoch + 1,
+    )
+    writer.add_scalar(
+        tag="train_epoch/avg_accuracy_top3",
+        scalar_value=top3_accuracies.avg,
+        global_step=epoch + 1,
+    )
+    writer.add_scalar(
+        tag="train_epoch/avg_accuracy_top1",
+        scalar_value=top1_accuracies.avg,
+        global_step=epoch + 1,
+    )
+    writer.add_scalar(
+        tag="train_epoch/train_loss",
+        scalar_value=np.mean(train_losses),
+        global_step=epoch + 1
+    )
+    
+    print(
+            "Training Epoch {0}/{1}---"
+            "Batch {2}/{3}---"
+            "Step {4}/{5}---"
+            "Avg Load Data Time {data_time.avg:.3f}---"
+            "Avg Step Time {step_time.avg:.3f}---"
+            "Avg Loss {losses.avg:.4f}---"
+            "\nAccuracies: Avg Top-5={top5s.avg:.4f}---"
+            "Avg Top-3 Accuracy={top3s.avg:.4f}---"
+            "Avg Top-1 Accuracy={top1s.avg:.4f}".format(
+                epoch + 1,
+                epochs,
+                i + 1,
+                len(train_loader),
+                step,
+                CONFIG['N_STEPS'],
+                step_time=step_time,
+                data_time=data_time,
+                losses=losses,
+                top5s=top5_accuracies,
+                top3s=top3_accuracies,
+                top1s=top1_accuracies,
+            )
+        )
+
+
+def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
+    """
+    One epoch's validation.
+
+    Args:
+
+        val_loader (torch.utils.data.DataLoader): Loader for validation
+        data
+
+        model (torch.nn.Module): Model
+
+        criterion (torch.nn.Module): Loss criterion.
+
+        epoch (int): Epoch number.
+
+        writer (torch.utils.tensorboard.SummaryWriter): TensorBoard
+        writer.
+
+        CONFIG (dict): Configuration.
+    """
+    print("\n")
+    model.eval()  # eval mode disables dropout
+
+    valid_losses = []
+
+    # Prohibit gradient computation explicitly
+    with torch.no_grad():
+        losses = AverageMeter()
+        top1_accuracies = AverageMeter()  # top-1 accuracy of first move
+        top3_accuracies = AverageMeter()  # top-3 accuracy of first move
+        top5_accuracies = AverageMeter()  # top-5 accuracy of first move
+        # Batches
+        for i, batch in tqdm(
+            enumerate(val_loader), desc="Validating", total=len(val_loader)
+        ):
+            # Move to default device
+            for key in batch:
+                batch[key] = batch[key].to(device)
+
+            with torch.autocast(
+                device_type=device.type, dtype=torch.float16, enabled=CONFIG['USE_AMP']
+            ):
+                # (Direct) Move prediction models
+                if CONFIG['NAME'].startswith(("CT-ED-", "CT-E-")):
+                    # Forward prop.
+                    predicted_moves = model(batch)  # (N, n_moves, move_vocab_size)
+                    # Note: n_moves is how many moves into the future we
+                    # are targeting for modeling. For an Encoder-Decoder
+                    # model, this might be max_move_sequence_length. For
+                    # an Encoder-only model, this will be 1.
+
+                    # Loss
+                    loss = criterion(
+                        predicted=predicted_moves,  # (N, n_moves, move_vocab_size)
+                        targets=batch["moves"][:, 1:],  # (N, n_moves)
+                        lengths=batch["lengths"],  # (N, 1)
+                    )  # scalar
+                    # Note: We don't pass the first move (the prompt
+                    # "<move>") as it is not a target/next-move of
+                    # anything
+
+                # "From" and "To" square prediction models
+                elif CONFIG['NAME'].startswith(("CT-EFT-")):
+                    # Forward prop.
+                    predicted_from_squares, predicted_to_squares = model(
+                        batch
+                    )  # (N, 1, 64), (N, 1, 64)
+
+                    # Loss
+                    loss = criterion(
+                        predicted=predicted_from_squares,
+                        targets=batch["from_squares"],
+                        lengths=batch["lengths"],
+                    ) + criterion(
+                        predicted=predicted_to_squares,
+                        targets=batch["to_squares"],
+                        lengths=batch["lengths"],
+                    )  # scalar
+
+                # Other models
+                else:
+                    raise NotImplementedError
+
+            # Keep track of losses
+            losses.update(loss.item(), batch["lengths"].sum().item())
+
+            # Keep track of accuracy (Direct) Move prediction models
+            if CONFIG['NAME'].startswith(("CT-ED-", "CT-E-")):
+                top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
+                    logits=predicted_moves[:, 0, :],  # (N, move_vocab_size)
+                    targets=batch["moves"][:, 1],  # (N)
+                    k=[1, 3, 5],
+                )
+
+            elif CONFIG['NAME'].startswith(("CT-EFT-")):
+                top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
+                    logits=predicted_from_squares[:, 0, :],  # (N, 64)
+                    targets=batch["from_squares"].squeeze(1),  # (N)
+                    other_logits=predicted_to_squares[:, 0, :],  # (N, 64)
+                    other_targets=batch["to_squares"].squeeze(1),  # (N)
+                    k=[1, 3, 5],
+                )
+
+            else:
+                raise NotImplementedError
+            top1_accuracies.update(top1_accuracy, batch["lengths"].shape[0])
+            top3_accuracies.update(top3_accuracy, batch["lengths"].shape[0])
+            top5_accuracies.update(top5_accuracy, batch["lengths"].shape[0])
+
+            valid_losses.append(loss.detach().cpu().numpy())
+
+        # Log to tensorboard
+        writer.add_scalar(
+            tag="val/loss", scalar_value=losses.avg, global_step=epoch + 1
+        )
+        writer.add_scalar(
+            tag="val/top1_accuracy",
+            scalar_value=top1_accuracies.avg,
+            global_step=epoch + 1,
+        )
+        writer.add_scalar(
+            tag="val/top3_accuracy",
+            scalar_value=top3_accuracies.avg,
+            global_step=epoch + 1,
+        )
+        writer.add_scalar(
+            tag="val/top5_accuracy",
+            scalar_value=top5_accuracies.avg,
+            global_step=epoch + 1,
+        )
+        writer.add_scalar(
+            tag="val/valid_loss",
+            scalar_value=np.mean(valid_losses),
+            global_step=epoch + 1
+            )
+
+        print("\nValidation loss: %.3f" % losses.avg)
+        print("Validation top-1 accuracy: %.3f" % top1_accuracies.avg)
+        print("Validation top-3 accuracy: %.3f" % top3_accuracies.avg)
+        print("Validation top-5 accuracy: %.3f\n" % top5_accuracies.avg)
+
+
+if __name__ == "__main__":
+    # Get configuration
+    config = import_config(model_config_name="CT-E-20", run_number=9)
+    # config = import_config(model_config_name="CT-E-20-v2")
+
+    # Train model
+    train_model(config)
