@@ -8,3 +8,6 @@ matchessbot/tools/*
 
 # not necessary
 **/matchessbot/chess_transformer/chess_transformer/dataset/*
+**/lichess_elite_2025-02.pgn
+**/dataset/gen_dataset_test.json
+**/lichess_db_puzzle.csv.zst
