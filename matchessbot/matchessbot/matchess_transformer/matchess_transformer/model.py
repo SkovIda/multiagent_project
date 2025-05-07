@@ -1,3 +1,24 @@
+"""
+The content of this file is based on the implementation of a single-agent transformer model for chess: 
+
+The following list of classes in this file have been directly reused from:
+https://github.com/sgrvinod/chess-transformers/blob/efe16dbf163c0c515a39afd79564e6449396d2eb/chess_transformers/transformers/modules.py
+- LabelSmoothedCE: https://github.com/sgrvinod/chess-transformers/blob/efe16dbf163c0c515a39afd79564e6449396d2eb/chess_transformers/transformers/criteria.py#L9
+- PositionWiseFCNetwork module from: https://github.com/sgrvinod/chess-transformers/blob/efe16dbf163c0c515a39afd79564e6449396d2eb/chess_transformers/transformers/modules.py#L260
+- MultiHeadAttention module is almost identical to the implementation found at: https://github.com/sgrvinod/chess-transformers/blob/efe16dbf163c0c515a39afd79564e6449396d2eb/chess_transformers/transformers/modules.py#L10
+    - Small modificaitons has been made to enable extracting the attention weights for visualization of the model's attention scores for specific input queries.
+- The implemented ChessTransformerEncoder and MATChessTransformerEncoder module is based on the implementation of the single-agent Chess Transformer encoder only model from:
+https://github.com/sgrvinod/chess-transformers/blob/efe16dbf163c0c515a39afd79564e6449396d2eb/chess_transformers/transformers/models.py#L223
+    - Small changes have been made throughout the implemented ChessTransformerEncoder module to adapt it to the configuration file format used in this project.
+    - Other changes include adapting the initialization of the weights and the format of the input/output of the original module to the desired parameters, input, and output of the desired model for this project
+    - The implementation of those two modules still closely resemble the original code that they are based on.
+
+        
+The following list of modules are also based on that implementation of a single-agent transformer model for chess, but have been heavily modified in order to convert it to be used in a multi-agent reinforment learning setting:
+- The BoardEncoder implementation in this file is based on the BoardEncoder module from: https://github.com/sgrvinod/chess-transformers/blob/efe16dbf163c0c515a39afd79564e6449396d2eb/chess_transformers/transformers/modules.py#L338
+    - The implementation of the BoardEncoder module in this file has been heavily modified to convert it to be used in a multi-agent reinforcement learning setting.
+"""
+
 import math
 import torch
 import argparse
@@ -11,7 +32,10 @@ DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
-
+"""
+The LabelSmoothedCE module implementation for computing the Label-smoothed Cross Entropy Loss was copied from:
+https://github.com/sgrvinod/chess-transformers/blob/efe16dbf163c0c515a39afd79564e6449396d2eb/chess_transformers/transformers/criteria.py#L9
+"""
 class LabelSmoothedCE(torch.nn.Module):
     """
     Cross Entropy loss with label-smoothing as a form of regularization.
@@ -577,7 +601,7 @@ class BoardEncoder(nn.Module):
         #     d_model,
         # )
         self.model_input_sequence_length = 64 + 4 + 16
-        print(f"BOARD_STATUS_LENGTH={self.model_input_sequence_length}?")
+        # print(f"BOARD_STATUS_LENGTH={self.model_input_sequence_length}?")
 
 
         # Positional embedding layer
@@ -666,28 +690,28 @@ class BoardEncoder(nn.Module):
             BOARD_STATUS_LENGTH, d_model).
         """
         batch_size = board_positions.size(0)  # N
-        print(f"batch_size = {batch_size}")
+        # print(f"batch_size = {batch_size}")
 
-        print(f"\nIn BoardEncoder.forward(): shape of agent_reward_weights={agent_reward_weights.shape}\n")
+        # print(f"\nIn BoardEncoder.forward(): shape of agent_reward_weights={agent_reward_weights.shape}\n")
 
-        # reward_type_0_weight_embedding_input = agent_reward_weights[:,:,0]
-        # print(f'Example of rewardtype_0 reward weights output:\ttype{type(reward_type_0_weight_embedding_input)} \tshape:\t{reward_type_0_weight_embedding_input.shape}')
+        # # reward_type_0_weight_embedding_input = agent_reward_weights[:,:,0]
+        # # print(f'Example of rewardtype_0 reward weights output:\ttype{type(reward_type_0_weight_embedding_input)} \tshape:\t{reward_type_0_weight_embedding_input.shape}')
 
-        print(f"\nShape of agent_ids input = {agent_ids.shape}")
-        print(f"\nShape of agents_pos input = {agents_pos.shape}")
+        # print(f"\nShape of agent_ids input = {agent_ids.shape}")
+        # print(f"\nShape of agents_pos input = {agents_pos.shape}")
 
-        agent_id_embedded_output = self.agent_ids_embeddings(agent_ids)
-        agent_pos_embedded_output = self.agents_pos_embeddings(agents_pos)
+        # agent_id_embedded_output = self.agent_ids_embeddings(agent_ids)
+        # agent_pos_embedded_output = self.agents_pos_embeddings(agents_pos)
 
 
-        print(f"\nShape of agent_ids_embeddings(agent_ids) output = {agent_id_embedded_output.shape}")
-        print(f"\nShape of agents_pos_embeddings(agents_pos) output = {agent_pos_embedded_output.shape}")
+        # print(f"\nShape of agent_ids_embeddings(agent_ids) output = {agent_id_embedded_output.shape}")
+        # print(f"\nShape of agents_pos_embeddings(agents_pos) output = {agent_pos_embedded_output.shape}")
 
-        # agent_ids_example_datapoint = agent_id_embedded_output[0]
-        # print(f"\n\nagent_ids_example_datapoint={agent_ids_example_datapoint}")
+        # # agent_ids_example_datapoint = agent_id_embedded_output[0]
+        # # print(f"\n\nagent_ids_example_datapoint={agent_ids_example_datapoint}")
 
-        # agent_pos_example_datapoint = agent_pos_embedded_output[0]
-        # print(f"\n\nagent_pos_example_datapoint={agent_pos_example_datapoint}")
+        # # agent_pos_example_datapoint = agent_pos_embedded_output[0]
+        # # print(f"\n\nagent_pos_example_datapoint={agent_pos_example_datapoint}")
 
         per_agent_input_features = torch.cat(
             [
@@ -698,40 +722,6 @@ class BoardEncoder(nn.Module):
                     agents_pos
                 ),
                 agent_reward_weights
-                # # Reward embeddings:
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,0]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,1]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,2]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,3]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,4]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,5]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,6]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,7]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,8]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,9]
-                # ),
-                # self.agent_reward_weights_embeddings(
-                #     agent_reward_weights[:,:,10]
-                # ),
             ],
             dim=2
         )
@@ -767,7 +757,7 @@ class BoardEncoder(nn.Module):
             ],
             dim=1,
         )  # (N, BOARD_STATUS_LENGTH, d_model)
-        print(f"\nshape of board embeddings={embeddings.shape} - BOARD EMBEDDING WORKS!!!\n")
+        # print(f"\nshape of board embeddings={embeddings.shape} - BOARD EMBEDDING WORKS!!!\n")
 
         # Add positional embeddings
         boards = embeddings + self.positional_embeddings.weight.unsqueeze(
@@ -996,7 +986,7 @@ class ChessTransformerEncoder(nn.Module):
         # # Find logits over vocabulary at the "turn" token
         # moves = self.fc(boards[:, :1, :])  # (N, 1, vocab_size)
 
-         # Find logits over vocabulary at the "agent_id" token:
+        # Find logits over vocabulary at the "agent_id" token:
         agents_move_preds = (
             self.policy_head(boards[:, 68:, :]) #.squeeze(2).unsqueeze(1)
         )  # (N, 16, 1971)
@@ -1005,7 +995,211 @@ class ChessTransformerEncoder(nn.Module):
         # )  # (N, 1, 64)
 
         return agents_move_preds #, agents_reward_preds
-    
+
+
+
+############################## MATChess Transformer (encoder only) ##############################
+def huber_loss(e, d):
+    a = (abs(e) <= d).float()
+    b = (e > d).float()
+    return a*e**2/2 + b*d*(abs(e)-d/2)
+
+
+class MATChessTransformerEncoder(nn.Module):
+    """
+    The MATChess Transformer (Encoder only) for decision-making for a team of heterogeneous chess piece agents.
+
+    Adapted from the 
+    """
+
+    def __init__(
+        self,
+        CONFIG,
+    ):
+        """
+        Init.
+
+        Args:
+
+            CONFIG (dict): The configuration, containing the following
+            parameters for the model:
+
+                VOCAB_SIZES (dict): The sizes of the vocabularies of the
+                Encoder sequence components.
+
+                D_MODEL (int): The size of vectors throughout the
+                transformer model, i.e. input and output sizes for the
+                Encoder.
+
+                N_HEADS (int): The number of heads in the multi-head
+                attention.
+
+                D_QUERIES (int): The size of query vectors (and also the
+                size of the key vectors) in the multi-head attention.
+
+                D_VALUES (int): The size of value vectors in the
+                multi-head attention.
+
+                D_INNER (int): An intermediate size in the position-wise
+                FC.
+
+                N_LAYERS (int): The number of [multi-head attention +
+                multi-head attention + position-wise FC] layers in the
+                Encoder.
+
+                DROPOUT (int): The dropout probability.
+        """
+        super(MATChessTransformerEncoder, self).__init__()
+
+        self.code = "E"
+
+        self.vocab_sizes = CONFIG['VOCAB_SIZES']
+        self.d_model = CONFIG['D_MODEL']
+        self.n_heads = CONFIG['N_HEADS']
+        self.d_queries = CONFIG['D_QUERIES']
+        self.d_values = CONFIG['D_VALUES']
+        self.d_inner = CONFIG['D_INNER']
+        self.n_layers = CONFIG['N_LAYERS']
+        self.dropout = CONFIG['DROPOUT']
+
+        # Encoder
+        self.board_encoder = BoardEncoder(
+            vocab_sizes=self.vocab_sizes,
+            d_model=self.d_model,
+            n_heads=self.n_heads,
+            d_queries=self.d_queries,
+            d_values=self.d_values,
+            d_inner=self.d_inner,
+            n_layers=self.n_layers,
+            dropout=self.dropout,
+        )
+
+        # Output linear layer that will compute logits for the corresponding vocabularies:
+        self.policy_head = nn.Linear(self.d_model, self.vocab_sizes["moves"])
+        self.value_head = nn.Linear(self.d_model, self.vocab_sizes["agents_rewards"])
+
+        # Initialize weights
+        self.init_weights()
+
+    def init_weights(self):
+        """
+        Initialize weights in the transformer model.
+        """
+        # Glorot uniform initialization with a gain of 1.
+        for p in self.parameters():
+            # Glorot initialization needs at least two dimensions on the
+            # tensor
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p, gain=1.0)
+
+        # For the embeddings, normal initialization with 0 mean and
+        # 1/sqrt(d_model) S.D.
+        nn.init.normal_(
+            self.board_encoder.board_position_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+        nn.init.normal_(
+            self.board_encoder.kingside_castling_rights_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+        nn.init.normal_(
+            self.board_encoder.queenside_castling_rights_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+        nn.init.normal_(
+            self.board_encoder.opponent_kingside_castling_rights_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+        nn.init.normal_(
+            self.board_encoder.opponent_queenside_castling_rights_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+        nn.init.normal_(
+            self.board_encoder.agent_ids_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+        nn.init.normal_(
+            self.board_encoder.agents_pos_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+        nn.init.normal_(
+            self.board_encoder.per_agent_state_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+        nn.init.normal_(
+            self.board_encoder.positional_embeddings.weight,
+            mean=0.0,
+            std=math.pow(self.d_model, -0.5),
+        )
+
+    def forward(self, batch):
+        """
+        Forward prop.
+
+        Args:
+
+            batch (dict): A single batch, containing the following keys:
+
+                turns (torch.LongTensor): The current turn (w/b), of
+                size (N, 1).
+
+                white_kingside_castling_rights (torch.LongTensor):
+                Whether white can castle kingside, of size (N, 1).
+
+                white_queenside_castling_rights (torch.LongTensor):
+                Whether white can castle queenside, of size (N, 1).
+
+                black_kingside_castling_rights (torch.LongTensor):
+                Whether black can castle kingside, of size (N, 1).
+
+                black_queenside_castling_rights (torch.LongTensor):
+                Whether black can castle queenside, of size (N, 1).
+
+                board_positions (torch.LongTensor): The current board
+                positions, of size (N, 64).
+
+        Returns:
+
+            torch.FloatTensor: The next-move logits, of size (N, 1,
+            vocab_size).
+        """
+        # Encoder
+        boards = self.board_encoder(
+            batch["board_positions"],
+            batch["kingside_castling_rights"],
+            batch["queenside_castling_rights"],
+            batch["opponent_castling_rights_kingside"],
+            batch["opponent_castling_rights_queenside"],
+            batch["agent_ids"],
+            batch["agents_pos"],
+            batch["reward_weights"]
+            
+        )  # (N, BOARD_STATUS_LENGTH, d_model)
+
+        # # Find logits over vocabulary at the "turn" token
+        # moves = self.fc(boards[:, :1, :])  # (N, 1, vocab_size)
+
+        # Find logits over the move vocabulary at the 16 tokens representing the state of each agent:
+        agents_move_preds = (
+            self.policy_head(boards[:, 68:, :])
+        )  # (N, 16, 1971)
+
+        # Predict the eleven rewards for each of the 16 agents on the team at the corresponding per-agent state input tokens:
+        agents_reward_preds = (
+            self.value_head(boards[:, 68:, :])
+        )  # (N, 16, 11)
+
+        return agents_move_preds, agents_reward_preds
+
+
 
 
 if __name__ == "__main__":

@@ -14,12 +14,21 @@ from torch.utils.data import DataLoader, random_split
 from torch.amp import GradScaler
 import torch.nn.functional as F
 
+from torch.nn import HuberLoss
 
 from matchess_transformer.config import import_config
 from matchess_transformer.dataset import MATChessDataset
-from matchess_transformer.model import ChessTransformerEncoder, LabelSmoothedCE
+from matchess_transformer.model import MATChessTransformerEncoder, LabelSmoothedCE, huber_loss
 from matchess_transformer.tokenizer import Tokenizer
 from matchess_transformer.vocab_uci_dicts import CHESS_PIECE_AGENTS
+
+
+
+# def training_inference_phase(stepsize, batch_size, n_agents, n_episodes, steps_per_episode):
+#     for episode in range(n_episodes):
+#         for t in range(steps_per_episode):
+
+
 
 
 def get_lr(step, d_model, warmup_steps, schedule="vaswani", decay=0.06, fixed=1e-5):
@@ -283,58 +292,11 @@ def train_model(CONFIG):
         shuffle=True
     )
     
-    # train_loader = DataLoader(
-    #     train_data,
-    #     batch_size=CONFIG['BATCH_SIZE'],
-    #     num_workers=CONFIG['NUM_WORKERS'],
-    #     pin_memory=CONFIG['PIN_MEMORY'],
-    #     prefetch_factor=CONFIG['PREFETCH_FACTOR'],
-    #     shuffle=True
-    # )
-    # val_loader = DataLoader(
-    #     val_data,
-    #     batch_size=CONFIG['BATCH_SIZE'],
-    #     num_workers=CONFIG['NUM_WORKERS'],
-    #     pin_memory=CONFIG['PIN_MEMORY'],
-    #     prefetch_factor=CONFIG['PREFETCH_FACTOR'],
-    #     shuffle=True
-    # )
-    
-    # train_loader = DataLoader(
-    #     dataset=MATChessDataset(
-    #         tokenizer=tokenizer,
-    #         dataset_path=CONFIG['DATA_FOLDER'],
-    #         n_datapoints=CONFIG['MAX_DATASET_SIZE'],
-    #         # h5_file=CONFIG['H5_FILE'],
-    #         # split="train",
-    #         # n_moves=CONFIG['N_MOVES'],
-    #     ),
-    #     batch_size=CONFIG['BATCH_SIZE'],
-    #     num_workers=CONFIG['NUM_WORKERS'],
-    #     pin_memory=CONFIG['PIN_MEMORY'],
-    #     prefetch_factor=CONFIG['PREFETCH_FACTOR'],
-    #     shuffle=True,
-    # )
-    # val_loader = DataLoader(
-    #     dataset=MATChessDataset(
-    #         tokenizer=tokenizer,
-    #         dataset_path=CONFIG['DATA_FOLDER'],
-    #         n_datapoints=CONFIG['MAX_DATASET_SIZE'],
-    #         # h5_file=CONFIG['H5_FILE'],
-    #         # split="val",
-    #         # n_moves=CONFIG['N_MOVES'],
-    #     ),
-    #     batch_size=CONFIG['BATCH_SIZE'],
-    #     num_workers=CONFIG['NUM_WORKERS'],
-    #     pin_memory=CONFIG['PIN_MEMORY'],
-    #     prefetch_factor=CONFIG['PREFETCH_FACTOR'],
-    #     shuffle=False,
-    # )
 
     ##### Model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # device = torch.device("cpu")    # TODO: Temp! Use cpu instead of gpu for testing to get move useful error msgs for debugging
-    model = ChessTransformerEncoder(CONFIG)
+    # device = torch.device("cpu")
+    model = MATChessTransformerEncoder(CONFIG)
     model = model.to(device)
 
     # Optimizer
@@ -372,6 +334,10 @@ def train_model(CONFIG):
         eps=CONFIG['LABEL_SMOOTHING'], n_predictions=CONFIG['N_AGENTS']
     )
     criterion = criterion.to(device)
+    value_criterion = HuberLoss(
+        reduction=CONFIG['HUBER_LOSS_REDUCTION'], delta=CONFIG['VALUE_LOSS_COEF']
+    )
+    value_criterion = value_criterion.to(device)
 
     # AMP scaler
     scaler = GradScaler(device=device, enabled=CONFIG['USE_AMP'])
@@ -393,6 +359,7 @@ def train_model(CONFIG):
             train_loader=train_loader,
             model=model,
             criterion=criterion,
+            value_criterion=value_criterion,
             optimizer=optimizer,
             scaler=scaler,
             epoch=epoch,
@@ -408,6 +375,7 @@ def train_model(CONFIG):
             val_loader=val_loader,
             model=model,
             criterion=criterion,
+            value_criterion=value_criterion,
             epoch=epoch,
             writer=writer,
             device=device,
@@ -423,6 +391,7 @@ def train_epoch(
     train_loader,
     model,
     criterion,
+    value_criterion,
     optimizer,
     scaler,
     epoch,
@@ -483,7 +452,10 @@ def train_epoch(
     start_data_time = time.time()
     start_step_time = time.time()
 
-    train_losses = []
+    # Track Policy loss and value Loss:
+    losses_policy = AverageMeter()
+    losses_value = AverageMeter()
+
 
     # Batches
     # for i, batch in enumerate(train_loader):
@@ -500,50 +472,10 @@ def train_epoch(
         with torch.autocast(
             device_type=device.type, dtype=torch.float16, enabled=CONFIG['USE_AMP']
         ):
-            # # (Direct) Move prediction models
-            # if CONFIG['NAME'].startswith(("CT-E-")):
-            #     # Forward prop.
-            #     predicted_moves = model(batch)  # (N, n_moves, move_vocab_size)
-            #     # Note: n_moves is how many moves into the future we are
-            #     # targeting for modeling. For an Encoder-Decoder model,
-            #     # this might be max_move_sequence_length. For an
-            #     # Encoder-only model, this will be 1.
-
-            #     # Loss
-            #     loss = criterion(
-            #         predicted=predicted_moves,  # (N, n_agents, move_vocab_size)
-            #         targets=batch["moves"][:, 1:],  # (N, n_agents)
-            #         lengths=batch["n_agents"],  # (N, 16)
-            #     )  # scalar
-            #     # Note: We don't pass the first move (the prompt
-            #     # "<move>") as it is not a target/next-move of anything
-
-            # # "From" and "To" square prediction models
-            # elif CONFIG['NAME'].startswith(("CT-EFT-")):
-            #     # Forward prop.
-            #     predicted_from_squares, predicted_to_squares = model(
-            #         batch
-            #     )  # (N, 1, 64), (N, 1, 64)
-
-            #     # Loss
-            #     loss = criterion(
-            #         predicted=predicted_from_squares,
-            #         targets=batch["from_squares"],
-            #         lengths=batch["lengths"],
-            #     ) + criterion(
-            #         predicted=predicted_to_squares,
-            #         targets=batch["to_squares"],
-            #         lengths=batch["lengths"],
-            #     )  # scalar
-            
             # (Direct) Move prediction models
             if CONFIG['NAME'].startswith(("MATChessFormer-Homogeneous-")):
                 # Forward prop.
                 predicted_moves = model(batch)  # (N, n_agents, move_vocab_size)
-                
-                # print(f'\npredicted moves.shape: {predicted_moves.shape}')
-                # print(f'targets.shape: {batch["moves"].shape}')
-                # print(f'batch["n_agents"]: {batch["n_agents"]}')
 
                 # Loss
                 loss = criterion(
@@ -552,35 +484,26 @@ def train_epoch(
                     lengths=batch["n_agents"].view(-1,1),  # (N, n_predictions_per_agent)
                 )  # scalar
                 # print(f"\nloss={loss}\n")
+
             elif CONFIG['NAME'].startswith(("MATChessFormer-Heterogeneous-")):
                 # Forward prop.
-                # predicted_from_squares, predicted_to_squares = model(
-                #     batch
-                # )  # (N, 1, 64), (N, 1, 64)
-
                 predicted_moves, predicted_rewards = model(
                     batch
                 )   # (N, n_agents, move_vocab_size), (N,n_agents, n_rewards_per_agent)
 
-                # Loss
-                # loss = criterion(
-                #     predicted=predicted_from_squares,
-                #     targets=batch["from_squares"],
-                #     lengths=batch["lengths"],
-                # ) + criterion(
-                #     predicted=predicted_to_squares,
-                #     targets=batch["to_squares"],
-                #     lengths=batch["lengths"],
-                # )  # scalar
-                loss = criterion(
+                policy_loss = criterion(
                     predicted=predicted_moves,
                     targets=batch["moves"],
-                    lengths= batch["n_agents"],
-                ) + criterion(
-                    predicted=predicted_rewards,
-                    targets=batch["agents_rewards"],
-                    lengths=batch["n_agents"],
-                )  # scalar
+                    lengths= batch["n_agents"].view(-1,1),  # (N, n_predictions_per_agent)
+                )
+                value_loss = value_criterion(
+                    input=predicted_rewards,
+                    target=batch["rewards"],  # (N, n_rewards_per_agent)
+                )
+                # print(value_loss.shape)
+
+                loss = policy_loss + (CONFIG['VALUE_LOSS_COEF'] * value_loss) #value_criterion(predicted_rewards, batch["agents_rewards"]) #np.mean(value_loss)
+
             # Other models
             else:
                 raise NotImplementedError
@@ -618,6 +541,28 @@ def train_epoch(
         
         # Keep track of accuracy (Direct) Move prediction models
         if CONFIG['NAME'].startswith(("MATChessFormer-Homogeneous-")):
+            top_k_accuracies = []
+            top_k_train_batch_accuracy = [0,0,0]
+            for agent_idx in range(CONFIG['N_AGENTS']):
+                top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
+                    logits=predicted_moves[:, agent_idx, :],  # (N, 1, move_vocab_size)
+                    targets=batch["moves"][:, 1],  # (N)
+                    k=[1, 3, 5],
+                )
+                top_k_accuracies.append([top1_accuracy, top3_accuracy, top5_accuracy])
+                # top1_accuracies_per_agent[agent_idx].update(top1_accuracy, CONFIG['BATCH_SIZE'])
+                # top3_accuracies_per_agent[agent_idx].update(top3_accuracy, CONFIG['BATCH_SIZE'])
+                # top5_accuracies_per_agent[agent_idx].update(top5_accuracy, CONFIG['BATCH_SIZE'])
+
+                top_k_train_batch_accuracy[0] += top1_accuracy
+                top_k_train_batch_accuracy[1] += top3_accuracy
+                top_k_train_batch_accuracy[2] += top5_accuracy
+
+        elif CONFIG['NAME'].startswith(("MATChessFormer-Heterogeneous-")):
+            # Keep track of policy and value losses
+            losses_policy.update(policy_loss.item(), batch["n_agents"].sum().item())
+            losses_value.update(value_loss.item(), batch["n_agents"].sum().item())
+            
             top_k_accuracies = []
             top_k_train_batch_accuracy = [0,0,0]
             for agent_idx in range(CONFIG['N_AGENTS']):
@@ -707,6 +652,14 @@ def train_epoch(
             writer.add_scalar(
                 tag="train/loss", scalar_value=losses.val, global_step=step
             )
+            
+            writer.add_scalar(
+                tag="train/loss_policy", scalar_value=losses_policy.val, global_step=step
+            )
+            writer.add_scalar(
+                tag="train/loss_value", scalar_value=losses_value.val, global_step=step
+            )
+
             writer.add_scalar(
                 tag="train/lr",
                 scalar_value=optimizer.param_groups[0]["lr"],
@@ -836,6 +789,15 @@ def train_epoch(
         scalar_value=losses.avg,
         global_step=epoch + 1,
     )
+
+    writer.add_scalar(
+        tag="train_epoch/avg_loss_policy", scalar_value=losses_policy.avg, global_step=step
+    )
+    writer.add_scalar(
+        tag="train_epoch/avg_loss_value", scalar_value=losses_value.avg, global_step=step
+    )
+
+
     writer.add_scalar(
         tag="train_epoch/avg_accuracy_top5",
         scalar_value=top5_accuracies.avg,
@@ -910,7 +872,7 @@ def train_epoch(
         )
 
 
-def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
+def validate_epoch(val_loader, model, criterion, value_criterion, epoch, writer, device, CONFIG):
     """
     One epoch's validation.
 
@@ -922,6 +884,8 @@ def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
         model (torch.nn.Module): Model
 
         criterion (torch.nn.Module): Loss criterion.
+
+        value_criterion (torch.nn.Module): Value Loss criterion
 
         epoch (int): Epoch number.
 
@@ -949,6 +913,10 @@ def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
             top1_accuracies_per_agent.append(AverageMeter())
             top3_accuracies_per_agent.append(AverageMeter())
             top5_accuracies_per_agent.append(AverageMeter())
+        
+        # Track Policy loss and value Loss:
+        losses_policy = AverageMeter()
+        losses_value = AverageMeter()
 
         # Batches
         for i, batch in tqdm(
@@ -972,23 +940,27 @@ def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
                         lengths=batch["n_agents"].view(-1,1),  # (N, n_predictions_per_agent)=(N,1)
                     )  # scalar
 
-                # # "From" and "To" square prediction models
-                # elif CONFIG['NAME'].startswith(("CT-EFT-")):
-                #     # Forward prop.
-                #     predicted_from_squares, predicted_to_squares = model(
-                #         batch
-                #     )  # (N, 1, 64), (N, 1, 64)
+                # Imitation learning with next state reward prediction as  auxiliary targets:
+                elif CONFIG['NAME'].startswith(("MATChessFormer-Heterogeneous-")):
+                    # Forward prop.
+                    predicted_moves, predicted_rewards = model(
+                        batch
+                    )  # (N, 1, 64), (N, 1, 64)
 
-                #     # Loss
-                #     loss = criterion(
-                #         predicted=predicted_from_squares,
-                #         targets=batch["from_squares"],
-                #         lengths=batch["lengths"],
-                #     ) + criterion(
-                #         predicted=predicted_to_squares,
-                #         targets=batch["to_squares"],
-                #         lengths=batch["lengths"],
-                #     )  # scalar
+                    policy_loss = criterion(
+                        predicted=predicted_moves,
+                        targets=batch["moves"],
+                        lengths= batch["n_agents"].view(-1,1),
+                    )
+                    # pred_reward_errors = predicted_rewards - batch["agents_rewards"]
+                    # value_loss = huber_loss(pred_reward_errors, CONFIG['HUBER_DELTA']
+                    # )  # SHOULD BE: scalar
+                    value_loss = value_criterion(
+                        input=predicted_rewards,
+                        target=batch["rewards"],  # (N, n_rewards_per_agent)
+                    )
+
+                    loss = policy_loss + CONFIG['VALUE_LOSS_COEF'] * value_loss #value_criterion(predicted_rewards, batch["agents_rewards"]) # np.mean(value_loss) # scalar
                 # Other models
                 else:
                     raise NotImplementedError
@@ -996,24 +968,8 @@ def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
             # Keep track of losses
             losses.update(loss.item(), batch["n_agents"].sum().item())
 
-            # # Keep track of accuracy (Direct) Move prediction models
-            # if CONFIG['NAME'].startswith(("CT-ED-", "CT-E-")):
-            #     top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
-            #         logits=predicted_moves[:, 0, :],  # (N, move_vocab_size)
-            #         targets=batch["moves"][:, 1],  # (N)
-            #         k=[1, 3, 5],
-            #     )
 
-            # elif CONFIG['NAME'].startswith(("CT-EFT-")):
-            #     top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
-            #         logits=predicted_from_squares[:, 0, :],  # (N, 64)
-            #         targets=batch["from_squares"].squeeze(1),  # (N)
-            #         other_logits=predicted_to_squares[:, 0, :],  # (N, 64)
-            #         other_targets=batch["to_squares"].squeeze(1),  # (N)
-            #         k=[1, 3, 5],
-            #     )
-
-            # Keep track of accuracy (Direct) Move prediction models
+            # Keep track of accuracy of move prediction:
             if CONFIG['NAME'].startswith(("MATChessFormer-Homogeneous-")):
                 top_k_accuracies = []
                 top_k_val_batch_accuracy = [0,0,0]
@@ -1031,80 +987,48 @@ def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
                     top_k_val_batch_accuracy[0] += top1_accuracy
                     top_k_val_batch_accuracy[1] += top3_accuracy
                     top_k_val_batch_accuracy[2] += top5_accuracy
+            elif CONFIG['NAME'].startswith(("MATChessFormer-Heterogeneous-")):
+                # Keep track of policy and value losses
+                losses_policy.update(policy_loss.item(), batch["n_agents"].sum().item())
+                losses_value.update(value_loss.item(), batch["n_agents"].sum().item())
+
+                top_k_accuracies = []
+                top_k_val_batch_accuracy = [0,0,0]
+                for agent_idx in range(CONFIG['N_AGENTS']):
+                    top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
+                        logits=predicted_moves[:, agent_idx, :],  # (N, 1, move_vocab_size)
+                        targets=batch["moves"][:, 1],  # (N)
+                        k=[1, 3, 5],
+                    )
+                    top_k_accuracies.append([top1_accuracy, top3_accuracy, top5_accuracy])
+
+                    top_k_val_batch_accuracy[0] += top1_accuracy
+                    top_k_val_batch_accuracy[1] += top3_accuracy
+                    top_k_val_batch_accuracy[2] += top5_accuracy
             else:
                 raise NotImplementedError
             
             top1_accuracies.update(top_k_val_batch_accuracy[0] / CONFIG['N_AGENTS'], CONFIG['BATCH_SIZE'])
             top3_accuracies.update(top_k_val_batch_accuracy[1] / CONFIG['N_AGENTS'], CONFIG['BATCH_SIZE'])
             top5_accuracies.update(top_k_val_batch_accuracy[2] / CONFIG['N_AGENTS'], CONFIG['BATCH_SIZE'])
-
-            # ######################################################################
-            # # Keep track of accuracy (Direct) Move prediction models
-            # if CONFIG['NAME'].startswith(("MATChessFormer-Homogeneous-")):
-            #     top_k_accuracies = []
-            #     for agent_idx in range(CONFIG['N_AGENTS']):
-            #         top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
-            #             logits=predicted_moves[:, agent_idx, :],  # (N, n_agents, move_vocab_size)
-            #             targets=batch["moves"][:, 1],  # (N)
-            #             k=[1, 3, 5],
-            #         )
-            #         top_k_accuracies.append([top1_accuracy, top3_accuracy, top5_accuracy])
-
-            #         # top1_accuracies_per_agent[agent_idx].update(top1_accuracy, CONFIG['BATCH_SIZE'])
-            #         # top3_accuracies_per_agent[agent_idx].update(top3_accuracy, CONFIG['BATCH_SIZE'])
-            #         # top5_accuracies_per_agent[agent_idx].update(top5_accuracy, CONFIG['BATCH_SIZE'])
-
-            #         # top1_accuracies.update(top1_accuracy, CONFIG['BATCH_SIZE'])
-            #         # top3_accuracies.update(top3_accuracy, CONFIG['BATCH_SIZE'])
-            #         # top5_accuracies.update(top5_accuracy, CONFIG['BATCH_SIZE'])
-            # else:
-            #     raise NotImplementedError
             
             for agent_idx in range(CONFIG['N_AGENTS']):
                 top1_accuracies_per_agent[agent_idx].update(top_k_accuracies[agent_idx][0], CONFIG['BATCH_SIZE'])
                 top3_accuracies_per_agent[agent_idx].update(top_k_accuracies[agent_idx][1], CONFIG['BATCH_SIZE'])
                 top5_accuracies_per_agent[agent_idx].update(top_k_accuracies[agent_idx][2], CONFIG['BATCH_SIZE'])
 
-            #     top1_accuracies.update(top_k_accuracies[agent_idx][0], CONFIG['BATCH_SIZE'])
-            #     top3_accuracies.update(top_k_accuracies[agent_idx][1], CONFIG['BATCH_SIZE'])
-            #     top5_accuracies.update(top_k_accuracies[agent_idx][2], CONFIG['BATCH_SIZE'])
-            # ############################################################
-            
-            # # top1_accuracies.update(np.mean(top_k_accuracies[:][0]).item(), CONFIG['BATCH_SIZE'])
-            # # top3_accuracies.update(np.mean(top_k_accuracies[:][1]).item(), CONFIG['BATCH_SIZE'])
-            # # top5_accuracies.update(np.mean(top_k_accuracies[:][2]).item(), CONFIG['BATCH_SIZE'])
-            
-            # # Keep track of accuracy (Direct) Move prediction models
-            # if CONFIG['NAME'].startswith(("MATChessFormer-Homogeneous-")):
-            #     top_k_accuracies = []
-            #     top_k_train_batch_accuracy = [0,0,0]
-            #     for agent_idx in range(CONFIG['N_AGENTS']):
-            #         top1_accuracy, top3_accuracy, top5_accuracy = topk_accuracy(
-            #             logits=predicted_moves[:, agent_idx, :],  # (N, 1, move_vocab_size)
-            #             targets=batch["moves"][:, 1],  # (N)
-            #             k=[1, 3, 5],
-            #         )
-            #         top_k_accuracies.append([top1_accuracy, top3_accuracy, top5_accuracy])
-            #         top1_accuracies_per_agent[agent_idx].update(top1_accuracy, CONFIG['BATCH_SIZE'])
-            #         top3_accuracies_per_agent[agent_idx].update(top3_accuracy, CONFIG['BATCH_SIZE'])
-            #         top5_accuracies_per_agent[agent_idx].update(top5_accuracy, CONFIG['BATCH_SIZE'])
-
-            #         top_k_train_batch_accuracy[0] += top1_accuracy
-            #         top_k_train_batch_accuracy[1] += top3_accuracy
-            #         top_k_train_batch_accuracy[2] += top5_accuracy
-            # else:
-            #     raise NotImplementedError
-
-            # top1_accuracies.update(np.mean(top_k_accuracies[:][0]).item(), CONFIG['BATCH_SIZE'])
-            # top3_accuracies.update(np.mean(top_k_accuracies[:][1]).item(), CONFIG['BATCH_SIZE'])
-            # top5_accuracies.update(np.mean(top_k_accuracies[:][2]).item(), CONFIG['BATCH_SIZE'])
-
-            # valid_losses.append(loss.detach().cpu().numpy())
 
         # Log to tensorboard
         writer.add_scalar(
             tag="val/loss", scalar_value=losses.avg, global_step=epoch + 1
         )
+        writer.add_scalar(
+            tag="val/loss_policy", scalar_value=losses_policy.avg, global_step=epoch + 1
+        )
+        writer.add_scalar(
+            tag="val/loss_value", scalar_value=losses_value.avg, global_step=epoch +1
+        )
+    
         writer.add_scalar(
             tag="val/top1_accuracy",
             scalar_value=top1_accuracies.avg,
@@ -1120,11 +1044,6 @@ def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
             scalar_value=top5_accuracies.avg,
             global_step=epoch + 1,
         )
-        # writer.add_scalar(
-        #     tag="val/valid_loss",
-        #     scalar_value=np.mean(valid_losses),
-        #     global_step=epoch + 1
-        #     )
         
         ##################################################
         ##### Creates a lot of .tf files in seperate sub-directories, but creates 3 graphs on tensorboard with all the top-1, top-3, and top-5 accuracies for all agents, respectively.
@@ -1170,15 +1089,17 @@ def validate_epoch(val_loader, model, criterion, epoch, writer, device, CONFIG):
         #         global_step=epoch + 1
         #     )
 
-        print("\nValidation loss: %.3f" % losses.avg)
-        print("Validation top-1 accuracy: %.3f" % top1_accuracies.avg)
-        print("Validation top-3 accuracy: %.3f" % top3_accuracies.avg)
-        print("Validation top-5 accuracy: %.3f\n" % top5_accuracies.avg)
+        print("\nValidation loss total: %.4f" % losses.avg)
+        print("Validation loss policy: %.4f" % losses_policy.avg)
+        print("Validation loss value: %.4f" % losses_value.avg)
+        print("\nValidation top-1 accuracy: %.4f" % top1_accuracies.avg)
+        print("Validation top-3 accuracy: %.4f" % top3_accuracies.avg)
+        print("Validation top-5 accuracy: %.4f\n" % top5_accuracies.avg)
 
 
 if __name__ == "__main__":
     # Get configuration
-    config = import_config(model_config_name="MATChessFormer-Homogeneous-20", run_number=2)
+    config = import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=3)
 
     # Train model
     train_model(config)

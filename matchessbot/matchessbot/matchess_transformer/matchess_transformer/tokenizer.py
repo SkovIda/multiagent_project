@@ -190,6 +190,147 @@ class Tokenizer:
         }
 
 
+    def encode_model_input_v2(self, game_state, chess_piece_agent_ids, chess_piece_agent_reward_weights):
+        """
+        encode model input for inference.
+        Args:
+            game_state (dict): Dict containing the following items (same game state info as in dataset):
+                {'state':
+                    "state":
+                        "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                        "state_idx": The idx of this state in the PGN game, where "0" is the first state in the game (the starting setup) 
+                        "team_color": The color of the team whose turn it is to make a move: can be either "white" or "black"
+                        "agent_pos_square_idx": list of the idx of the square wheare each of the agents are standing on. -1 if the agent is not present on the board.
+                        "possible_en_pessant_target_present": true/false
+                        "ep_square_idx": int in range [0,63] if possible_en_pessant_target_present=true, else -1
+                        "castling_rights_kingside": true/false
+                        "castling_rights_queenside": true/false
+                        "opponent_castling_rights_kingside": true/false
+                        "opponent_castling_rights_queenside": true/false
+                }
+        Returns:
+
+            dict: Encoded game state. Containst the encoded input to the model and the corresponding output targets
+        """
+        model_inputs = dict()
+        board = chess.Board()
+        board.set_fen(game_state['state']['fen'])
+
+        agents_pos_temp_list = [square_idx if square_idx >= 0 else self.encode(self.pad_token, vocabulary=AGENT_POS) for square_idx in game_state['state']['agent_pos_square_idx']]
+
+        # If blacks turn, mirror the board and invert colors of the pieces => "model always thinks it is playing as white"
+        if board.turn is not chess.WHITE:
+            board.apply_mirror()
+            # agent_states = [chess.square_mirror(agent_pos) for agent_pos in agent_states]
+            agents_pos_temp_list = [chess.square_mirror(square_idx) if square_idx >= 0 else self.encode(self.pad_token, vocabulary=AGENT_POS) for square_idx in game_state['state']['agent_pos_square_idx']]
+
+        ##### Castling Rights:
+        board_str, turn, castling_rights, ep_square, _, __ = board.fen().split() # NOTE: The ep_square output from this is wrong!: print(ep_square)
+        
+        castling_rights_kingside = "K" in castling_rights
+        castling_rights_queenside = "Q" in castling_rights
+        opponent_castling_rights_kingside = "k" in castling_rights
+        opponent_castling_rights_queenside = "q" in castling_rights
+
+        board_encoded = [0] * 64
+        for square_idx, chess_piece in board.piece_map().items():
+            board_encoded[self.encode(chess.SQUARE_NAMES[square_idx], SQUARES)] = self.encode(chess.Piece.symbol(chess_piece),PIECES) 
+
+        ##### EP Square:
+        if board.ep_square is not None:
+            board_encoded[self.encode(chess.SQUARE_NAMES[board.ep_square], SQUARES)] = self.encode(",", PIECES)
+
+
+        # board_posiiton = (
+        #     torch.IntTensor(board_encoded).unsqueeze(0)
+        # ).to(self.device) # (64)
+        # kingside_castling_rights = torch.IntTensor(
+        #     [self.encode(castling_rights_kingside, vocabulary=BOOL)]
+        # ).to(self.device) # (1)
+        # queenside_castling_rights = torch.IntTensor(
+        #         [self.encode(castling_rights_queenside, vocabulary=BOOL)]
+        # ).to(self.device) # (1)
+        # opponent_castling_rights_kingside = torch.IntTensor(
+        #     [self.encode(opponent_castling_rights_kingside, vocabulary=BOOL)]
+        # ).to(self.device) # (1)
+        # opponent_castling_rights_queenside = torch.IntTensor(
+        #     [self.encode(opponent_castling_rights_queenside, vocabulary=BOOL)]
+        # ).to(self.device) # (1)
+        # agent_ids = torch.IntTensor(
+        #     self.encode(chess_piece_agent_ids,vocabulary=CHESS_PIECE_AGENTS)
+        # ).to(self.device) # (16)
+        # agents_pos = torch.IntTensor(
+        #     agents_pos_temp_list #pgn_dataset_entry['state']['agent_pos_square_idx']
+        # ).to(self.device) # (16)
+        # reward_weights = torch.FloatTensor(
+        #     chess_piece_agent_reward_weights
+        # ).to(self.device) # Agent reward weights: (n_agents, n_reward_types)
+
+        # return {
+        #     'board_positions': board_posiiton,
+        #     "kingside_castling_rights": kingside_castling_rights,
+        #     "queenside_castling_rights": queenside_castling_rights,
+        #     "opponent_castling_rights_kingside": opponent_castling_rights_kingside,
+        #     "opponent_castling_rights_queenside": opponent_castling_rights_queenside,
+        #     "agent_ids": agent_ids,
+        #     "agents_pos": agents_pos,
+        #     "reward_weights": reward_weights,
+        #     # "n_agents": len(chess_piece_agent_ids),
+        # }
+        board_posiiton = (
+            torch.IntTensor(board_encoded).unsqueeze(0)
+        ) # (64)
+        kingside_castling_rights = torch.IntTensor(
+            [self.encode(castling_rights_kingside, vocabulary=BOOL)]
+        ) # (1)
+        queenside_castling_rights = torch.IntTensor(
+                [self.encode(castling_rights_queenside, vocabulary=BOOL)]
+        ) # (1)
+        opponent_castling_rights_kingside = torch.IntTensor(
+            [self.encode(opponent_castling_rights_kingside, vocabulary=BOOL)]
+        ) # (1)
+        opponent_castling_rights_queenside = torch.IntTensor(
+            [self.encode(opponent_castling_rights_queenside, vocabulary=BOOL)]
+        ) # (1)
+        agent_ids = torch.IntTensor(
+            self.encode(chess_piece_agent_ids,vocabulary=CHESS_PIECE_AGENTS)
+        ) # (16)
+        # agents_pos_temp_list = [square_idx if square_idx >= 0 else self.encode(self.pad_token, vocabulary=AGENT_POS) for square_idx in pgn_dataset_entry['state']['agent_pos_square_idx']]
+        agents_pos = torch.IntTensor(
+            agents_pos_temp_list #pgn_dataset_entry['state']['agent_pos_square_idx']
+        ) # (16)
+        reward_weights = torch.FloatTensor(
+            chess_piece_agent_reward_weights
+        ) # Agent reward weights: (n_agents, n_reward_types)
+
+
+        # moves = torch.LongTensor(
+        #     [self.encode(pgn_dataset_entry['action'], vocabulary=UCI_MOVES)] * len(chess_piece_agent_ids)
+        # ) # (n_agents) = (16)
+
+        # target_rewards = []
+        # for key, reward_weights_agent_i in pgn_dataset_entry['rewards'].items():
+        #     target_rewards.append(reward_weights_agent_i)
+
+        # weighted_target_rewards = torch.FloatTensor(
+        #         chess_piece_agent_reward_weights).mul(torch.FloatTensor(target_rewards).transpose(1,0)
+        # )
+
+        return {
+            'board_positions': board_posiiton.unsqueeze(0),
+            "kingside_castling_rights": kingside_castling_rights.unsqueeze(0),
+            "queenside_castling_rights": queenside_castling_rights.unsqueeze(0),
+            "opponent_castling_rights_kingside": opponent_castling_rights_kingside.unsqueeze(0),
+            "opponent_castling_rights_queenside": opponent_castling_rights_queenside.unsqueeze(0),
+            "agent_ids": agent_ids.unsqueeze(0),
+            "agents_pos": agents_pos.unsqueeze(0),
+            "reward_weights": reward_weights.unsqueeze(0),
+            # "moves": moves,
+            # "rewards": weighted_target_rewards,
+            # "n_agents": len(chess_piece_agent_ids),
+        }
+    
+    
     def encode_model_input(self, fen_str, agent_ids, agent_pos, agent_reward_weights):
         """
         Get inputs to be fed to a model.

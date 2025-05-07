@@ -10,12 +10,20 @@ from tqdm import tqdm
 
 import copy
 
+import numpy as np
+import random
+
 
 class MATChessDataset(Dataset):
     chess_piece_agent_ids = ['king', 'queen', 'rook0', 'rook7', 'knight1', 'knight6', 'bishop2', 'bishop5', 'pawn0', 'pawn1', 'pawn2', 'pawn3', 'pawn4', 'pawn5', 'pawn6', 'pawn7']
     reward_types_len = 11
+
+    # randomize_agent_priority = np.array(range(1.0, 12.0, 1.1), dtype=float)
+    # random.Random(42).shuffle(randomize_agent_priority)
+    # print(f"\nRandomized agent priority{randomize_agent_priority}")
     chess_piece_agent_reward_weights = [[1.0] * reward_types_len] * len(chess_piece_agent_ids)
     
+
     def __init__(self, tokenizer: Tokenizer, dataset_path: str, n_datapoints=None, **unused):
         self.tokenizer = tokenizer
         self.games = []
@@ -41,7 +49,7 @@ class MATChessDataset(Dataset):
                 n_datapoint_counter += 1
                 if n_datapoints is not None:
                     if n_datapoint_counter >= n_datapoints:
-                        print(f"Reached maximum number of entries in dataset: n_datapoints={n_datapoints}.")
+                        print(f"\nReached maximum number of entries in dataset: n_datapoints={n_datapoints}.")
                         break
 
         print("Done loading dataset.")
