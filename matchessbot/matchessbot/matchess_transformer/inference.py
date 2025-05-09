@@ -7,8 +7,12 @@ import numpy as np
 
 import copy
 
+import random
+import math
+
 import chess
 import chess.engine
+import chess.pgn
 
 
 import enum
@@ -57,7 +61,18 @@ class RandomPlayer(Player):
 
 # Player that utilizes the Stockfish chess engine for selecting its moves:
 class FairyStockfishPlayer(Player):
-    SKILL_LEVEL_ELO = {1: 500}
+    # UCI_Elo: default=1350, min=500, max=2850
+    # skill_level=>ELO conversoin source: https://lichess.org/forum/lichess-feedback/how-strong-are-the-stockfish-levels#3
+    SKILL_LEVEL_ELO = {
+        1: 500,
+        2: 600,
+        3: 800,
+        4: 1100,
+        5: 1500,
+        6: 1900,
+        7: 2300,
+        8: 2850,
+        }
     def __init__(self, name: str='player_0', skill_level = 1):
         self.player_name = name
         # self.player_type='stockfish-level-' + str(skill_level)
@@ -66,7 +81,8 @@ class FairyStockfishPlayer(Player):
         # print(dict(self.engine.options).items())
         # self.engine.configure({"Skill Level": skill_level})
         self.engine.configure({"UCI_LimitStrength": True, "UCI_Elo": self.SKILL_LEVEL_ELO[skill_level]})
-        
+        # print(dict(self.engine.options).items())
+
     def get_next_move(self, chess_board_fen, action_mask, move_hist_san, move_hist_uci):
         chess_board = chess.Board(fen=chess_board_fen)
         engine_result = self.engine.play(chess_board, chess.engine.Limit(time=0.1))
@@ -121,6 +137,89 @@ class MATChessGameState:
     reward_list_agent_order = ['king', 'queen', 'rook0', 'rook7', 'knight1', 'knight6', 'bishop2', 'bishop5', 'pawn0', 'pawn1', 'pawn2', 'pawn3', 'pawn4', 'pawn5', 'pawn6', 'pawn7']
     
     def __init__(self):
+        # self.white_chess_piece_agents_pos = {
+        #     'king': chess.E1,
+        #     'queen': chess.D1,
+        #     'rook0': chess.A1,
+        #     'rook7': chess.H1,
+        #     'knight1': chess.B1,
+        #     'knight6': chess.G1,
+        #     'bishop2': chess.C1,
+        #     'bishop5': chess.F1,
+        #     'pawn0': chess.A2,
+        #     'pawn1': chess.B2,
+        #     'pawn2': chess.C2,
+        #     'pawn3': chess.D2,
+        #     'pawn4': chess.E2,
+        #     'pawn5': chess.F2,
+        #     'pawn6': chess.G2,
+        #     'pawn7': chess.H2
+        # }
+        # self.black_chess_piece_agents_pos = {
+        #     'king': chess.E8,
+        #     'queen': chess.D8,
+        #     'rook0': chess.A8,
+        #     'rook7': chess.H8,
+        #     'knight1': chess.B8,
+        #     'knight6': chess.G8,
+        #     'bishop2': chess.C8,
+        #     'bishop5': chess.F8,
+        #     'pawn0': chess.A7,
+        #     'pawn1': chess.B7,
+        #     'pawn2': chess.C7,
+        #     'pawn3': chess.D7,
+        #     'pawn4': chess.E7,
+        #     'pawn5': chess.F7,
+        #     'pawn6': chess.G7,
+        #     'pawn7': chess.H7
+        # }
+
+        # self.state_attributes_per_agent_before_action = {
+        #     'white': {
+        #         'king': None,
+        #         'queen': None,
+        #         'rook0': None,
+        #         'rook7': None,
+        #         'knight1': None,
+        #         'knight6': None,
+        #         'bishop2': None,
+        #         'bishop5': None,
+        #         'pawn0': None,
+        #         'pawn1': None,
+        #         'pawn2': None,
+        #         'pawn3': None,
+        #         'pawn4': None,
+        #         'pawn5': None,
+        #         'pawn6': None,
+        #         'pawn7': None
+        #     },
+        #     'black': {
+        #         'king': None,
+        #         'queen': None,
+        #         'rook0': None,
+        #         'rook7': None,
+        #         'knight1': None,
+        #         'knight6': None,
+        #         'bishop2': None,
+        #         'bishop5': None,
+        #         'pawn0': None,
+        #         'pawn1': None,
+        #         'pawn2': None,
+        #         'pawn3': None,
+        #         'pawn4': None,
+        #         'pawn5': None,
+        #         'pawn6': None,
+        #         'pawn7': None
+        #     }
+        # }
+
+        # self.agent_order_in_state_attr_lists = []
+        # for team_name in self.reward_list_team_order:
+        #         for agent_name in self.reward_list_agent_order:
+        #             self.agent_order_in_state_attr_lists.append(team_name + '_' + agent_name)
+        return
+
+    def init_new_matchess_game(self):
         self.white_chess_piece_agents_pos = {
             'king': chess.E1,
             'queen': chess.D1,
@@ -201,9 +300,7 @@ class MATChessGameState:
         for team_name in self.reward_list_team_order:
                 for agent_name in self.reward_list_agent_order:
                     self.agent_order_in_state_attr_lists.append(team_name + '_' + agent_name)
-
-
-    def init_new_matchess_game(self):
+        
         self.board = chess.Board()
         self.board.reset()
 
@@ -273,14 +370,24 @@ class MATChessGameState:
 
                 if agent_pos is not None:
                 
-                    agent_color = chess_board.color_at(square=agent_pos)
+                    agent_color = self.board.color_at(square=agent_pos) #chess_board.color_at(square=agent_pos)
+                    if agent_color is None:
+                        print(chess_board)
+                        raise AttributeError(f"Agent at square {agent_pos} has color={agent_color}")
+                        
                     opponent_color = chess.WHITE if agent_color==chess.BLACK else chess.BLACK
 
-                    agent_attack_squares = chess_board.attacks(square=agent_pos)
-                    agent_under_attacked_from_square = chess_board.attackers(color=opponent_color, square=agent_pos)
-                    agent_defended_by_agent_on_square = chess_board.attackers(color=agent_color, square=agent_pos)
-                    agent_chess_piece = chess_board.piece_at(square=agent_pos)
-                    same_piece_type_count = len(chess_board.pieces(piece_type=agent_chess_piece.piece_type, color=agent_color))
+                    # agent_attack_squares = chess_board.attacks(square=agent_pos)
+                    # agent_under_attacked_from_square = chess_board.attackers(color=opponent_color, square=agent_pos)
+                    # agent_defended_by_agent_on_square = chess_board.attackers(color=agent_color, square=agent_pos)
+                    # agent_chess_piece = chess_board.piece_at(square=agent_pos)
+                    # same_piece_type_count = len(chess_board.pieces(piece_type=agent_chess_piece.piece_type, color=agent_color))
+                    
+                    agent_attack_squares = self.board.attacks(square=agent_pos)
+                    agent_under_attacked_from_square = self.board.attackers(color=opponent_color, square=agent_pos)
+                    agent_defended_by_agent_on_square = self.board.attackers(color=agent_color, square=agent_pos)
+                    agent_chess_piece = self.board.piece_at(square=agent_pos)
+                    same_piece_type_count = len(self.board.pieces(piece_type=agent_chess_piece.piece_type, color=agent_color))
 
                     agent_attributes_dict = {
                         'is_alive': True,
@@ -502,6 +609,67 @@ def topk_sampling(logits, k=1):
     return samples
 
 
+
+
+def sample_action(policy_logits, reward_logits, batch_size, k=1):
+    k = min(k, policy_logits.shape[1])
+
+    # is_random_sample = random.random()
+    # EPS_START = 0.9
+    # EPS_END = 0.05
+    # EPS_DECAY = 1000
+    # eps_threshold = EPS_END + (EPS_START - EPS_END) * \
+    #     math.exp(-1. * steps_done / EPS_DECAY)
+    # if is_random_sample > eps_threshold:
+    #     with torch.no_grad():
+    #         # Get indices corresponding to top-max(k) scores
+    #         probabilities = F.softmax(policy_logits, dim=-1).unsqueeze(2)  # (N, vocab_size, 1)
+    #         other_probabilities = F.softmax(reward_logits, dim=-1).unsqueeze(
+    #             1
+    #         )  # (N, 1, other_vocab_size)
+    #         combined_probabilities = torch.bmm(probabilities, other_probabilities).view(
+    #             batch_size, -1
+    #         )  # (N, vocab_size * other_vocab_size)
+    #         _, flattened_indices = combined_probabilities.topk(
+    #             k=k, dim=1
+    #         )  # (N, max(k))
+    #         policy_indices = flattened_indices // reward_logits.shape[-1]  # (N, max(k))
+    #         reward_indices = flattened_indices % reward_logits.shape[-1]  # (N, max(k))
+
+    #         # # Expand targets to the same shape
+    #         # targets = targets.unsqueeze(1).expand_as(indices)  # (N, max(k))
+    #         # other_targets = other_targets.unsqueeze(1).expand_as(
+    #         #     other_indices
+    #         # )  # (N, max(k))
+    #         probabilities = 
+    # else:
+    #     policy_logits
+    
+    # Get indices corresponding to top-max(k) scores
+    probabilities = F.softmax(policy_logits, dim=-1).unsqueeze(2)  # (N, vocab_size, 1)
+    other_probabilities = F.softmax(reward_logits, dim=-1).unsqueeze(
+        1
+    )  # (N, 1, other_vocab_size)
+    # print(probabilities.shape)
+    # print(other_probabilities.shape)
+
+    combined_probabilities = torch.bmm(probabilities, other_probabilities).view(
+        k, -1
+    )  # (N, vocab_size * other_vocab_size)
+    _, flattened_indices = combined_probabilities.topk(
+        k=k, dim=1
+    )  # (N, max(k))
+    policy_indices = flattened_indices // reward_logits.shape[-1]  # (N, max(k))
+    reward_indices = flattened_indices % reward_logits.shape[-1]  # (N, max(k))
+
+
+    # action_samples = torch.multinomial(probabilities, num_samples=k).squeeze(1)  #  (N)
+    # print(action_samples)
+
+    return policy_indices[0, :k]
+
+
+
 # MATChessTransformerEncoder chess player:
 class MATChessPlayer(Player):
     chess_piece_agent_ids = ['king', 'queen', 'rook0', 'rook7', 'knight1', 'knight6', 'bishop2', 'bishop5', 'pawn0', 'pawn1', 'pawn2', 'pawn3', 'pawn4', 'pawn5', 'pawn6', 'pawn7']
@@ -517,7 +685,7 @@ class MATChessPlayer(Player):
 
     def __init__(self, name='player_0'):
         self.player_name=name
-        self.player_type='matchess-encformer'
+        self.player_type='matchess-rl-encformer'
 
         self.matchess_game_state = MATChessGameState()
         self.matchess_game_state.init_new_matchess_game()
@@ -555,6 +723,7 @@ class MATChessPlayer(Player):
             raise NotImplementedError
 
         self.n_agents = CONFIG['N_AGENTS']
+        self.batch_size = CONFIG['BATCH_SIZE']
         
         self.DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(self.DEVICE)
@@ -671,10 +840,19 @@ class MATChessPlayer(Player):
                 # agents_predicted_moves = predicted_moves[:, agent_idx, :]  # (1, move_vocab_size)
                 # print(agents_predicted_moves.shape)
 
-                # Perform top-k sampling to obtain a legal predicted move
+                # # Perform top-k sampling to obtain a legal predicted move
+                # if self.voting_scheme == 'democracy':
+                #     legal_move_index = topk_sampling(
+                #         logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
+                #         k=k,
+                #     ).item()
+
+                # Perform action sampling to obtain a legal predicted move
                 if self.voting_scheme == 'democracy':
-                    legal_move_index = topk_sampling(
-                        logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
+                    legal_move_index = sample_action(
+                        policy_logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
+                        reward_logits=predicted_rewards[:, agent_idx, :],
+                        batch_size=self.batch_size,
                         k=k,
                     ).item()
                     
@@ -683,6 +861,8 @@ class MATChessPlayer(Player):
                     if not agent_vote in move_votes.keys():
                         move_votes[agent_vote] = 0
                     move_votes[agent_vote] += 1
+            
+            print(move_votes)
 
             # model_move = legal_moves[legal_move_index]
             model_move = max(move_votes, key=move_votes.get)
@@ -693,7 +873,7 @@ class MATChessPlayer(Player):
         
 
 
-def play_chess_game(player_0: Player=RandomPlayer, player_1: Player=RandomPlayer):
+def play_chess_game(player_0: Player=RandomPlayer, player_1: Player=RandomPlayer, save_pgn_to_file: str|None=None):
     # env = chess_v6.env(render_mode="ansi")
     env = chess_v6.env(render_mode="human")
     env.reset(seed=42)
@@ -724,7 +904,7 @@ def play_chess_game(player_0: Player=RandomPlayer, player_1: Player=RandomPlayer
 
         if termination or truncation:
             action = None
-
+            # print("\nGame Terminated!")
         else:
             obs = observation['observation']
             mask = observation["action_mask"]
@@ -750,55 +930,118 @@ def play_chess_game(player_0: Player=RandomPlayer, player_1: Player=RandomPlayer
             san_move = env.env.board.san(chess_move)
             game_log['san_moves'].append(san_move)
         
-        if isinstance(player_0, MATChessPlayer):
-            player_0.matchess_game_state.matchess_env_step(uci_move)
-        if isinstance(player_1, MATChessPlayer):
-            player_1.matchess_game_state.matchess_env_step(uci_move)
+            # player_0.matchess_game_state.matchess_env_step(uci_move)
+            if isinstance(player_0, MATChessPlayer):
+                player_0.matchess_game_state.matchess_env_step(uci_move)
+            if isinstance(player_1, MATChessPlayer):
+                player_1.matchess_game_state.matchess_env_step(uci_move)
 
         env.step(action)
 
-        outcome = chess.Board(fen=env.env.board.fen()).outcome(claim_draw=True)
+        # outcome = chess.Board(fen=env.env.board.fen()).outcome(claim_draw=True)
+        outcome = env.env.board.outcome(claim_draw=True)
         if outcome is not None:
             game_log['game_result'] = outcome.result()
             game_log['termination'] = outcome.termination
 
-    env.close()
+            if save_pgn_to_file is not None:
 
-    # if isinstance(player_0, (FairyStockfishPlayer)):
-    #     player_0.shut_down()
-    # if isinstance(player_1, (FairyStockfishPlayer)):
-    #     player_1.shut_down()
+                pgn_game = chess.pgn.Game.from_board(env.env.board)
+                pgn_game.headers["Event"] = "Example"
+                pgn_game.headers["White"] = player_0.player_type
+                pgn_game.headers["Black"] = player_1.player_type
+                pgn_game.headers["Result"] = outcome.result()
+                pgn_game.headers["Termination"] = "Normal"
+
+                print(pgn_game, file=open(save_pgn_to_file, "a", encoding="utf-8"), end="\n\n")
+
+                save_pgn_to_file = None
+
+                # with open(save_pgn_to_file, "a", encoding="utf-8") as outfile:
+                #     # exporter = chess.pgn.FileExporter(pgn_game)
+                #     # pgn_game.accept(exporter)
+                #     outfile.write(print(pgn_game, end="\n\n"))
+                #     outfile.write("\n\n")
+                #     outfile.close()
+
+    env.close()
     
     return game_log
 
 
 def print_game_log(game_log_dict):
-    print(f'GAME LOG:')
+    print(f'\n\nGAME LOG:')
     for key, item in game_log_dict.items():
         print(f"\t{key}:\t{item}")
+    return
+
+
+
+
+
+def generate_selfplay_pgn_data(pgn_filename, n_games: int=100):
+    matchessformer_white = MATChessPlayer(name='player_0')
+    cfg = import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=2, inference=True)
+    matchessformer_white.load_model(cfg)
+
+    matchessformer_black = MATChessPlayer(name='player_1')
+    matchessformer_black.load_model(cfg)
+
+    with open(pgn_filename, "w") as outfile:
+        outfile.close()
+
+    try:
+        for game_i in range(n_games):
+            matchessformer_white.matchess_game_state.init_new_matchess_game()
+            matchessformer_black.matchess_game_state.init_new_matchess_game()
+
+            game_log = play_chess_game(player_0=matchessformer_white, player_1=matchessformer_black, save_pgn_to_file=pgn_filename)
+            print_game_log(game_log)
+
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt. Shutting down...")
+        pass
 
     return
 
-if __name__=='__main__':
-    # TODO: test that the MATChess player model can be used to generate an episode with the current policy to generate on-policy self-play RL training data and save in a PGN file???
 
-    # TODO: Use the PGN file to train the value head of the model with RL???
-    # TODO: Log: rewards, per-reward loss, chosen action, value loss, tok-k legal_moves accuracy, for all agents during traing???
+
+if __name__=='__main__':
+    # bench_resource_model_inference()
+    # print(timeit.timeit("bench_resource_model_inference()", setup="from __main__ import bench_resource_model_inference"))
+
+    # TODO: test that the MATChess player model can be used to generate an episode with the current policy to generate on-policy self-play RL training data and save in a PGN file???
+    pgn_filename="./data/selfplay_data/selfplay_pgn_gen_test.pgn"
+    generate_selfplay_pgn_data(pgn_filename=pgn_filename, n_games=2)
+    # NOTE: Change k in MATChessPlayer.get_next_move().model_next_move(k=k) to get a random move from a sample of top-k legal moves
+
+    # TODO: Use the PGN file to train/fine-tune the value and policy head of the model with RL instead of the human data???
 
     matchessformer = MATChessPlayer(name='player_0')
-    cfg = import_config(model_config_name="MATChessFormer-Homogeneous-20", run_number=2, inference=True)
+    # cfg = import_config(model_config_name="MATChessFormer-Homogeneous-20", run_number=2, inference=True)
+    cfg = import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=2, inference=True)
     matchessformer.load_model(cfg)
 
-    # opponent_player = RandomPlayer(name="player_1")
-    # opponent_player = FairyStockfishPlayer(name="player_1")
+    # # opponent_player = RandomPlayer(name="player_1")
+    # opponent_player = FairyStockfishPlayer(name="player_1",skill_level=3)
 
-    matchessformer_opponent = MATChessPlayer(name='player_1')
+    opponent_player = MATChessPlayer(name='player_1')
     # cfg = import_config(model_config_name="MATChessFormer-Homogeneous-20", run_number=2, inference=True)
-    matchessformer_opponent.load_model(cfg)
+    opponent_player.load_model(cfg)
 
-    game_log = play_chess_game(player_0=matchessformer, player_1=matchessformer_opponent)
+    try:
+        for game_i in range(1):
+            matchessformer.matchess_game_state.init_new_matchess_game()
+            game_log = play_chess_game(player_0=matchessformer, player_1=opponent_player)
+            print_game_log(game_log)
+        
+        if isinstance(opponent_player, (FairyStockfishPlayer)):
+            opponent_player.shut_down()
 
-    print_game_log(game_log)
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt. Shutting down...")
+        pass
+
 
     
-
+    
