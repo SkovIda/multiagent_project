@@ -7,6 +7,8 @@ from launch.substitutions import PathJoinSubstitution
 import launch
 import launch.actions
 import launch.event_handlers
+from launch_ros.actions import Node
+
 
 def generate_launch_description():
     os.environ['RMW_IMPLEMENTATION'] = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
@@ -17,18 +19,30 @@ def generate_launch_description():
     chess_team = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
-                FindPackageShare('matchessbot'), 'launch', 'chess_piece_agent_launch_all.launch.py'
+                FindPackageShare('matchessbot'), 'chess_piece_agent_launch_all.launch.py'
             ])
         ])
     )
     launches.append(chess_team)
 
-    manager = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('matchessbot'), 'launch', 'matchess_manager.launch.py'
-            ])
-        ])
+    # manager = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource([
+    #         PathJoinSubstitution([
+    #             FindPackageShare('matchessbot'), 'matchess_manager.launch.py'
+    #         ])
+    #     ])
+    # )
+    # launches.append(manager)
+    arguments = []
+    DEBUG_ENV = os.environ.get('MATCHESS_DEBUG', 'FALSE').lower() in ('true', '1', 't')
+    if DEBUG_ENV:
+        arguments = ['--ros-args', '--log-level', ['matchess_manager', ':=', 'DEBUG']]
+
+    manager = Node(
+        package='matchessbot',
+        executable='matchess_manager',
+        name= 'matchess_manager',
+        arguments=arguments
     )
     launches.append(manager)
 
