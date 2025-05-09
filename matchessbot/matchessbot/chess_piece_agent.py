@@ -125,6 +125,8 @@ class ChessPieceAgent(Node):
         )
         self.game_hist_sub  # prevent unused variable warning
 
+        self.game_state_hist = []
+
         # self.game_status = GAME_STATUS.OK
         self.game_over = False
         self.robot_status_pub = self.create_publisher(
@@ -264,7 +266,7 @@ class ChessPieceAgent(Node):
             # Check if game is over:
             if self.board_state.is_game_over(claim_draw=self.claim_draw_allowed):
                 # TODO: handle rewards
-                self.get_logger().debug('Game over with move: "%s"' % msg.uci)
+                self.get_logger().info('Game over with move: "%s"' % msg.uci)
 
                 # Update game_status:
                 # self.game_status = GAME_STATUS.STOP # This will destroy the node
@@ -275,16 +277,41 @@ class ChessPieceAgent(Node):
 
 
     def matchess_game_cmd_sub(self, game_status_cmd_msg):
-        self.get_logger().info('I heard: "%s"' % game_status_cmd_msg.status_str)
+        self.get_logger().debug('I heard: "%s"' % game_status_cmd_msg.status_str)
         self.game_status_cmd = GAME_STATUS(game_status_cmd_msg.status_int)
 
     def matchess_game_hist_sub(self, game_hist_uci_msg):
-        if self.game_status == GAME_STATUS.SET_GAME_STATE_FROM_HIST:
+        self.game_state_hist = game_hist_uci_msg.move_hist_uci
+        # if self.game_status == GAME_STATUS.SET_GAME_STATE_FROM_HIST:
+        #     self.reset_game()
+        #     for uci_move_str in game_hist_uci_msg.move_hist_uci:
+        #         self.update_game_state(uci_move_str)
+
+        #         self.update_agent_state(uci_move_str)
+
+        #         # Check if game is over:
+        #         if self.board_state.is_game_over(claim_draw=self.claim_draw_allowed):
+        #             # TODO: handle rewards
+        #             self.get_logger().info('Game over with move: "%s"' % uci_move_str)
+
+        #             # Update game_status:
+        #             self.game_status = GAME_STATUS.GAME_OVER # This will destroy the node
+        #             return
+            
+        #     self.game_status = GAME_STATUS.READY_TO_PLAY
+    
+    def set_game_state_from_hist(self):
+        # if self.game_status == GAME_STATUS.SET_GAME_STATE_FROM_HIST:
+        if len(self.game_state_hist) > 0:
             self.reset_game()
-            for uci_move_str in game_hist_uci_msg.move_hist_uci:
+            full_game_hist_string = ""
+            for uci_move_str in self.game_state_hist:
                 self.update_game_state(uci_move_str)
 
                 self.update_agent_state(uci_move_str)
+
+                full_game_hist_string += uci_move_str
+                full_game_hist_string += " "
 
                 # Check if game is over:
                 if self.board_state.is_game_over(claim_draw=self.claim_draw_allowed):
@@ -295,7 +322,10 @@ class ChessPieceAgent(Node):
                     self.game_status = GAME_STATUS.GAME_OVER # This will destroy the node
                     return
             
+            self.get_logger().info('Done setting game state from hist %s' %full_game_hist_string)
+            self.game_state_hist = []
             self.game_status = GAME_STATUS.READY_TO_PLAY
+
 
     def reset_game(self):
         self.board_state = chess.Board()
@@ -354,6 +384,9 @@ class ChessPieceAgent(Node):
             raise Exception("Shutting down node, Game over")
         elif self.game_status == GAME_STATUS.GAME_OVER:
             self.pub_game_status()
+
+        elif self.game_status == GAME_STATUS.SET_GAME_STATE_FROM_HIST:
+            self.set_game_state_from_hist()
 
 
 

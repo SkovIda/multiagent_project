@@ -71,6 +71,16 @@ class MatchessManager(Node):
         )
         self.game_status_sub  # prevent unused variable warning
 
+        # Subscriber that works as a CLI for user input:
+        self.cli_sub = self.create_subscription(
+            GameStatus,
+            'matchess/ui_cli',
+            self.ui_cli_callback,
+            self.qos
+        )
+        self.cli_sub  # prevent unused variable warning
+
+
         self.game_status_cmd_pub = self.create_publisher(
             GameStatus,
             'matchess/game_status_cmd',
@@ -167,7 +177,7 @@ class MatchessManager(Node):
         self.game_half_move_count += 1
         self.log_game_hist_png += str(self.previous_move_uci) + ' '
         self.log_game_hist[self.game_half_move_count] = {"Votes": self.move_votes, "agent Votes": self.recieved_vote_from_agent ,"Hist": self.log_game_hist_png}
-        self.get_logger().debug('Game log: %s' % json.dumps(self.log_game_hist))
+        self.get_logger().debug('Game log: %s' % json.dumps(self.log_game_hist[self.game_half_move_count]))
 
         # Reset the variables used for collecting and counting votes:
         self.vote_count_during_turn = 0
@@ -207,6 +217,56 @@ class MatchessManager(Node):
         # TODO: Implement what should happen when the game is over!
         if msg_in.status_int == int(GAME_STATUS.GAME_OVER.value):
             raise Exception("Shutting down manager node, Game over")
+        
+    def ui_cli_callback(self, msg_in):
+        msg_out = GameStatus()
+        msg_out.status_str = msg_in.status_str
+        msg_out.status_int = msg_in.status_int
+
+        self.game_status_cmd_pub.publish(msg_out)
+        self.get_logger().debug("pub command %s to all agents" % msg_out.status_str)
+        
+        if msg_in.status_int == GAME_STATUS.SET_GAME_STATE_FROM_HIST.value:
+            msg_out_setup_hist = GameHist()
+            # TODO: Load/input a GameHist to matchess_manager that will be used to set up the game state instead of the temporary hardcoded GAME_HIST below!
+            msg_out_setup_hist.move_hist_uci = ["e2e4"]
+
+            for uci_move in msg_out_setup_hist.move_hist_uci:
+                self.game_half_move_count += 1
+                self.previous_move_uci = uci_move
+                self.log_game_hist_png += self.previous_move_uci + ' '
+                self.log_game_hist[self.game_half_move_count] = {"Votes": {}, "agent Votes": {} ,"Hist": self.log_game_hist_png}
+                self.get_logger().debug('Add Game log with move from input hist: %s' % json.dumps(self.log_game_hist[self.game_half_move_count]))
+
+                # Update global state and save render of board as .png:
+                self.global_board_state.push_uci(str(self.previous_move_uci))
+                svg_text = chess.svg.board(
+                    self.global_board_state,
+                    size=350)
+
+                hist_log_img_filename = self.game_hist_path_prefix + str(self.game_half_move_count)
+                # # Save img of initial state as .svg:
+                # with open(hist_log_img_filename + '.svg', 'w') as f:
+                #     f.write(svg_text)
+                
+                # Save img of initial state as .png:
+                svg2png(bytestring=svg_text, write_to=hist_log_img_filename + '.png')
+                
+                with open(self.hist_log_moves_filename, 'a') as f:
+                    f.write('\n' + str(self.game_half_move_count) + '.\t' + str(self.previous_move_uci))
+                    f.close()
+
+                with open(self.log_game_vote_hist_filename, 'w') as log_game_vote_hist_file:
+                    json.dump(self.log_game_hist, log_game_vote_hist_file)
+                    log_game_vote_hist_file.close()
+
+            self.game_status_hist_pub.publish(msg_out_setup_hist)
+            
+            self.get_logger().debug("pub GameHist to all agents. first move = %s" % msg_out_setup_hist.move_hist_uci[0])
+
+        
+
+
 
 
 def main(args=None):
