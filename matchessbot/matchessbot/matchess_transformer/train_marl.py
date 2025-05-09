@@ -457,6 +457,33 @@ def train_epoch(
     losses_value = AverageMeter()
 
 
+    # Keep track of the rewards during training:
+    reward_per_agent_individual_survival = []
+    reward_per_agent_individual_mobility = []
+    reward_per_agent_individual_aggressiveness = []
+    reward_per_agent_piece_solidarity = []
+    reward_per_agent_individual_defensiveness = []
+    reward_per_agent_team_goal = []
+    reward_per_agent_group_survival = []
+    reward_per_agent_society_aggresiveness = []
+    reward_per_agent_patience = []
+    reward_per_agent_group_mobility = []
+    reward_per_agent_society_defensiveness = []
+
+    for agent in range(CONFIG['N_AGENTS']):
+        reward_per_agent_individual_survival.append(AverageMeter())
+        reward_per_agent_individual_mobility.append(AverageMeter())
+        reward_per_agent_individual_aggressiveness.append(AverageMeter())
+        reward_per_agent_piece_solidarity.append(AverageMeter())
+        reward_per_agent_individual_defensiveness.append(AverageMeter())
+        reward_per_agent_team_goal.append(AverageMeter())
+        reward_per_agent_group_survival.append(AverageMeter())
+        reward_per_agent_society_aggresiveness.append(AverageMeter())
+        reward_per_agent_patience.append(AverageMeter())
+        reward_per_agent_group_mobility.append(AverageMeter())
+        reward_per_agent_society_defensiveness.append(AverageMeter())
+
+
     # Batches
     # for i, batch in enumerate(train_loader):
     for i, batch in tqdm(
@@ -595,8 +622,21 @@ def train_epoch(
             # top1_accuracies.update(top_k_accuracies[agent_idx][0], CONFIG['BATCH_SIZE'])
             # top3_accuracies.update(top_k_accuracies[agent_idx][1], CONFIG['BATCH_SIZE'])
             # top5_accuracies.update(top_k_accuracies[agent_idx][2], CONFIG['BATCH_SIZE'])
-        
-        
+
+        # TODO: Update the 11 rewards per agent and accout for batch_size
+        # batch['rewards'] = (N, )
+        for agent_idx in range(CONFIG['N_AGENTS']):
+            reward_per_agent_individual_survival[agent_idx].update(torch.sum(batch['rewards'][agent_idx][0]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_individual_mobility[agent_idx].update(torch.sum(batch['rewards'][agent_idx][1]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_individual_aggressiveness[agent_idx].update(torch.sum(batch['rewards'][agent_idx][2]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_piece_solidarity[agent_idx].update(torch.sum(batch['rewards'][agent_idx][3]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_individual_defensiveness[agent_idx].update(torch.sum(batch['rewards'][agent_idx][4]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_team_goal[agent_idx].update(torch.sum(batch['rewards'][agent_idx][5]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_group_survival[agent_idx].update(torch.sum(batch['rewards'][agent_idx][6]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_society_aggresiveness[agent_idx].update(torch.sum(batch['rewards'][agent_idx][7]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_patience[agent_idx].update(torch.sum(batch['rewards'][agent_idx][8]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_group_mobility[agent_idx].update(torch.sum(batch['rewards'][agent_idx][9]).item(), CONFIG['BATCH_SIZE'])
+            reward_per_agent_society_defensiveness[agent_idx].update(torch.sum(batch['rewards'][agent_idx][10]).item(), CONFIG['BATCH_SIZE'])
 
 
         # Update model (i.e. perform a training step) only after
@@ -686,6 +726,97 @@ def train_epoch(
                 scalar_value=top5_accuracies.val,
                 global_step=step,
             )
+
+            #################################################
+            #### Creates a lot of .tf files in seperate sub-directories, but creates 3 graphs on tensorboard with all the top-1, top-3, and top-5 accuracies for all agents, respectively.
+            reward_per_agent_dict = {
+                'SURVIVAL_OF_THE_AGENT': {},
+                'AGENT_CONTRIBUTION': {},
+                'INDIVIDUAL_AGGRESIVENESS': {},
+                'PIECE_TYPE_SOLIDARITY': {},
+                'INDIVIDUAL_DEFENSIVENESS': {},
+                'TEAM_GOAL': {},
+                'TEAM_SURVIVAL': {},
+                'SOCIETY_AGGRESIVENESS': {},
+                'SOCIETY_PATIENCE': {},
+                'GROUP_MOBILITY': {},
+                'SOCIETY_DEFENSIVENESS': {}
+            }
+            for key, value in CHESS_PIECE_AGENTS.items():
+                reward_per_agent_dict['SURVIVAL_OF_THE_AGENT'][key] = reward_per_agent_individual_survival[value].val
+                reward_per_agent_dict['AGENT_CONTRIBUTION'][key] = reward_per_agent_individual_mobility[value].val
+                reward_per_agent_dict['INDIVIDUAL_AGGRESIVENESS'][key] = reward_per_agent_individual_aggressiveness[value].val 
+                reward_per_agent_dict['PIECE_TYPE_SOLIDARITY'][key] = reward_per_agent_piece_solidarity[value].val
+                reward_per_agent_dict['INDIVIDUAL_DEFENSIVENESS'][key] = reward_per_agent_individual_defensiveness[value].val
+                reward_per_agent_dict['TEAM_GOAL'][key] = reward_per_agent_team_goal[value].val
+                reward_per_agent_dict['TEAM_SURVIVAL'][key] = reward_per_agent_group_survival[value].val
+                reward_per_agent_dict['SOCIETY_AGGRESIVENESS'][key] = reward_per_agent_society_aggresiveness[value].val
+                reward_per_agent_dict['SOCIETY_PATIENCE'][key] = reward_per_agent_patience[value].val
+                reward_per_agent_dict['GROUP_MOBILITY'][key] = reward_per_agent_group_mobility[value].val
+                reward_per_agent_dict['SOCIETY_DEFENSIVENESS'][key] = reward_per_agent_society_defensiveness[value].val
+
+            # for reward_key, reward_item in reward_per_agent_dict.items():
+            #     writer.add_scalars(
+            #         main_tag="train_reward_" + str(reward_key) + "/",
+            #         tag_scalar_dict= reward_item, #reward_per_agent_dict[reward_key],
+            #         global_step=step
+            #     )
+            writer.add_scalars(
+                main_tag="train_reward/SURVIVAL_OF_THE_AGENT/",
+                tag_scalar_dict= reward_per_agent_dict['SURVIVAL_OF_THE_AGENT'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/AGENT_CONTRIBUTION/",
+                tag_scalar_dict= reward_per_agent_dict['AGENT_CONTRIBUTION'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/INDIVIDUAL_AGGRESIVENESS/",
+                tag_scalar_dict= reward_per_agent_dict['INDIVIDUAL_AGGRESIVENESS'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/PIECE_TYPE_SOLIDARITY/",
+                tag_scalar_dict= reward_per_agent_dict['PIECE_TYPE_SOLIDARITY'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/INDIVIDUAL_DEFENSIVENESS/",
+                tag_scalar_dict= reward_per_agent_dict['INDIVIDUAL_DEFENSIVENESS'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/TEAM_GOAL/",
+                tag_scalar_dict= reward_per_agent_dict['TEAM_GOAL'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/TEAM_SURVIVAL/",
+                tag_scalar_dict= reward_per_agent_dict['TEAM_SURVIVAL'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/SOCIETY_AGGRESIVENESS/",
+                tag_scalar_dict= reward_per_agent_dict['SOCIETY_AGGRESIVENESS'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/SOCIETY_PATIENCE/",
+                tag_scalar_dict= reward_per_agent_dict['SOCIETY_PATIENCE'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/GROUP_MOBILITY/",
+                tag_scalar_dict= reward_per_agent_dict['GROUP_MOBILITY'],
+                global_step=step
+            )
+            writer.add_scalars(
+                main_tag="train_reward/SOCIETY_DEFENSIVENESS/",
+                tag_scalar_dict= reward_per_agent_dict['SOCIETY_DEFENSIVENESS'],
+                global_step=step
+            )
+            #################################################
 
             
             #################################################
@@ -791,10 +922,14 @@ def train_epoch(
     )
 
     writer.add_scalar(
-        tag="train_epoch/avg_loss_policy", scalar_value=losses_policy.avg, global_step=step
+        tag="train_epoch/avg_loss_policy",
+        scalar_value=losses_policy.avg,
+        global_step=epoch + 1,
     )
     writer.add_scalar(
-        tag="train_epoch/avg_loss_value", scalar_value=losses_value.avg, global_step=step
+        tag="train_epoch/avg_loss_value",
+        scalar_value=losses_value.avg,
+        global_step=epoch + 1,
     )
 
 
@@ -1099,7 +1234,9 @@ def validate_epoch(val_loader, model, criterion, value_criterion, epoch, writer,
 
 if __name__ == "__main__":
     # Get configuration
-    config = import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=3)
+    # config = import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=2)
+
+    config = import_config(model_config_name="MATChessFormer-Heterogeneous-20-hubersum", run_number=3)
 
     # Train model
     train_model(config)
