@@ -38,9 +38,15 @@ git clone git@github.com:SkovIda/multiagent_project.git
         RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/game_status_cmd matchess_interfaces/msg/GameStatus "{status_str: 'RESET_GAME_STATE',status_int: 1}" --once --qos-reliability reliable --qos-durability transient_local
         ``` -->
     1. Optional: Setup the state of the game from a MoveHist before starting the game:
-        ```
-        RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/ui_cli matchess_interfaces/msg/GameStatus "{status_str: 'SET_GAME_STATE_FROM_HIST',status_int: 8}" --once --qos-reliability reliable --qos-durability transient_local
-        ```
+        1. Pub message to put all nodes in "setup mode":
+            ```
+            RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/ui_cli matchess_interfaces/msg/GameStatus "{status_str: 'SET_GAME_STATE_FROM_HIST',status_int: 8}" --once --qos-reliability reliable --qos-durability transient_local
+            ```
+        1. Set the game state of all the agents in the game from a list of UCI moves. As an example, The following command will set the state of all the agents in the game to the state AFTER white has made their first move: "e2e4":
+            ```
+            RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/ui_cli matchess_interfaces/msg/GameHist "{move_hist_uci: ["e2e4"]}" --once --qos-reliability reliable --qos-durability transient_local
+            ```
+
     1. Tell the agents to start the game from the current game state of the agents
         <!-- ```
         RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/game_status_cmd matchess_interfaces/msg/GameStatus "{status_str: 'START_GAME',status_int: 2}" --once --qos-reliability reliable --qos-durability transient_local
@@ -48,6 +54,7 @@ git clone git@github.com:SkovIda/multiagent_project.git
         ```
         RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/ui_cli matchess_interfaces/msg/GameStatus "{status_str: 'START_GAME',status_int: 2}" --once --qos-reliability reliable --qos-durability transient_local
         ```
+    
 
 
 
