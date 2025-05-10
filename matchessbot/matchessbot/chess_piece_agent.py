@@ -282,26 +282,8 @@ class ChessPieceAgent(Node):
 
     def matchess_game_hist_sub(self, game_hist_uci_msg):
         self.game_state_hist = game_hist_uci_msg.move_hist_uci
-        # if self.game_status == GAME_STATUS.SET_GAME_STATE_FROM_HIST:
-        #     self.reset_game()
-        #     for uci_move_str in game_hist_uci_msg.move_hist_uci:
-        #         self.update_game_state(uci_move_str)
-
-        #         self.update_agent_state(uci_move_str)
-
-        #         # Check if game is over:
-        #         if self.board_state.is_game_over(claim_draw=self.claim_draw_allowed):
-        #             # TODO: handle rewards
-        #             self.get_logger().info('Game over with move: "%s"' % uci_move_str)
-
-        #             # Update game_status:
-        #             self.game_status = GAME_STATUS.GAME_OVER # This will destroy the node
-        #             return
-            
-        #     self.game_status = GAME_STATUS.READY_TO_PLAY
     
     def set_game_state_from_hist(self):
-        # if self.game_status == GAME_STATUS.SET_GAME_STATE_FROM_HIST:
         if len(self.game_state_hist) > 0:
             self.reset_game()
             full_game_hist_string = ""
