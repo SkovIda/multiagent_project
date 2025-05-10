@@ -81,7 +81,7 @@ git clone git@github.com:SkovIda/multiagent_project.git
         - GAME_STATUS.NONE, GAME_STATUS.IDLE, GAME_STATUS.READY_TO_PLAY, GAME_STATUS.GAME_IN_PROGRESS, GAME_STATUS.GAME_OVER
 - [X] Debug code that setup new game from a later stage of a game, which is set up from a list of UCI moves:
     - [X] Uses a GAME_STATUS command used to set the agent's game states from a list of UCI moves that was played to reach it: `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/game_status_cmd matchess_interfaces/msg/GameStatus "{status_str: 'SET_GAME_STATE_FROM_HIST',status_int: 8}" --once --qos-reliability reliable --qos-durability transient_local`
-    - [ ] Load/input a GameHist to matchess_manager that will be used to set up the game state instead of the temporary hardcoded GAME_HIST in the ui_cli_callback() in the matchess_manager node!
+    - [X] Use CLI to input a GameHist to matchess_manager that will be used to set up the game state instead of the temporary hardcoded GAME_HIST in the ui_cli_callback() in the matchess_manager node!
 - [ ] Make a general single-agent player for running different chess engines with the same single-agent player node:
     1. [ ] Create a new chess player node class: chess_player_agent.py (same functionality as the player_stockfish node except for the following changes)
     1. [ ] Make a new launch file: `single_agent_player.launch.py`
