@@ -7,6 +7,14 @@ cd ros2ws/src/
 git clone git@github.com:SkovIda/multiagent_project.git
 ```
 <!-- 1. Set environment variable: `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` -->
+2. install dependencies (cyclonedds is not in rosdep, therefore '-r')
+```
+rosdep install --from-paths src/matchessbot/ --ignore-src -y --rosdistro=humble -r
+```
+3. install cyclonedds `apt install ros-humble-rmw-cyclonedds-cpp`
+1. create a virtual env `virtualenv venv && source venv/bin/activate`
+1. install pip dependencies (system packages are old) `pip install -r multiagent_project/matchessbot/requirements.txt`
+1. update pythonpath to prefer venv packages `export PYTHONPATH=$VIRTUAL_ENV/lib/python3.10/site-packages:$PYTHONPATH`
 
 ## Run chess game with MATChess bot (white) vs. Stockfish engine (black):
 1. Build the matchess interfaces package from workspace root dir `ros2ws/`: `colcon build --packages-select matchess_interfaces`

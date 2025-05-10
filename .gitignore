@@ -6,6 +6,7 @@ matchessbot/tools/*
 **/matchessbot/test_results/*
 **/*.h5
 matchessbot/matchessbot/chessformers/*
+**/venv/*
 
 # not necessary
 **/matchessbot/chess_transformer/chess_transformer/dataset/*

@@ -10,7 +10,9 @@
   <exec_depend>matchess_interfaces</exec_depend>
   <exec_depend>cairosvg</exec_depend>
   <exec_depend>rmw_cyclonedds</exec_depend>
-
+  
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-torch</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

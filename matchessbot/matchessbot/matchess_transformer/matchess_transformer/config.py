@@ -107,11 +107,49 @@ CFG_HETEROGENEOUS_MAS_INFERENCE = {
     "LOAD_MODEL_CHECKPOINT": "checkpoint_epoch_75_MATChessFormer-Heterogeneous-20.pt"
 }
 
+####################################################
+
+
+ROS_CFG_HETEROGENEOUS_MAS_INFERENCE = {
+    "NAME": "MATChessFormer-Heterogeneous-20",
+    "VOCAB_SIZES": get_vocab_sizes(),
+    "D_MODEL": 512,
+    "N_HEADS": 8,
+    "D_QUERIES": 64,
+    "D_VALUES": 64,
+    "D_INNER": 2048,
+    "N_LAYERS": 6,
+    "DROPOUT": 0.1, 
+    "N_MOVES": 1,           # expected maximum length of move sequences in the model, <= MAX_MOVE_SEQUENCE_LENGTH
+    "N_AGENTS": 16,
+    "BATCH_SIZE": 128,
+    "RUN_NUMBER": 2,
+    "CHECKPOINT_FOLDER": "training_runs", #/MATChessFormer-Heterogeneous-20/model_checkpoints/run_2/",
+    "MAX_MOVE_SEQUENCE_LENGTH": 1, #10,
+    "SAMPLING_K": 1,        # k in top-k sampling model predictions during play
+    "BOARD_STATUS_LENGTH": 84,  # total length of input sequence
+    "TRAINING_CHECKPOINT": None, # path to model checkpoint (NAME + ".pt") to resume training, None if none
+    "CHECKPOINT_AVG_PREFIX": "step",
+    "CHECKPOINT_AVG_SUFFIX": ".pt",  # checkpoint end string to match checkpoints saved for averaging
+    "EVAL_GAMES_FOLDER": "training_runs/MATChessFormer-Heterogeneous-20/evaluate_games/run_2",  # folder where evaluation games are saved in PGN files
+    "FINAL_CHECKPOINT": "averaged_MATChessFormer-Heterogeneous-20_run_2.pt", # final checkpoint to be used for eval/inference
+    "AVERAGE_STEPS": {9000, 9250, 9550, 9700, 9850, 10000}, #{491000, 492500, 494000, 495500, 497000, 498500, 500000}
+    "MAX_DATASET_SIZE": int(128 * 16), #None, #5000,
+    "VALUE_LOSS_COEF": 1.0,
+    "HUBER_DELTA": 1.0,
+    "HUBER_LOSS_REDUCTION": 'mean', # the type of reduction used when calculating the Huber Loss. Can be one of the following: 'mean', 'sum', or None 
+    "MODEL_TYPE": "MARL",
+    "LOAD_MODEL_CHECKPOINT": "checkpoint_epoch_75_MATChessFormer-Heterogeneous-20.pt"
+}
 
 #############################
 
 
 def import_config(model_config_name: str="MATChessFormer-20", run_number: int=0, inference=False):
+    # if ros:
+    #     if model_config_name=="MATChessFormer-Heterogeneous-20":
+    #         return CFG_HETEROGENEOUS_MAS_INFERENCE
+
     if inference:
         if model_config_name=="MATChessFormer-Homogeneous-20":
             return CFG_HOMOGENEOUS_MAS_INFERENCE
