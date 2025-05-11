@@ -6,15 +6,18 @@
 cd ros2ws/src/
 git clone git@github.com:SkovIda/multiagent_project.git
 ```
-<!-- 1. Set environment variable: `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` -->
 2. install dependencies (cyclonedds is not in rosdep, therefore '-r')
 ```
 rosdep install --from-paths src/matchessbot/ --ignore-src -y --rosdistro=humble -r
 ```
-3. install cyclonedds `apt install ros-humble-rmw-cyclonedds-cpp`
-1. create a virtual env `virtualenv venv && source venv/bin/activate`
-1. install pip dependencies (system packages are old) `pip install -r multiagent_project/matchessbot/requirements.txt`
-1. update pythonpath to prefer venv packages `export PYTHONPATH=$VIRTUAL_ENV/lib/python3.10/site-packages:$PYTHONPATH`
+3. Install requirements from workspace root dir: `ros2ws/`:
+    - 
+    ```
+    pip3 install -r src/matchessbot/requirements.txt
+    ```
+    - NOTE: Don't use virtualenv. ros2 humble does not mix well with virtual envs. See cautionary note about virtual envs ROS2 in docs: https://docs.ros.org/en/jazzy/How-To-Guides/Using-Python-Packages.html#using-python-packages-with-ros-2
+    - NOTE: need to install pytorch with pip because `python3-torch 1.8.1-4 (amd64 binary) in ubuntu jammy` (ubuntu 22.04) is a CPU-only version of PyTorch: https://launchpad.net/ubuntu/jammy/amd64/python3-torch/1.8.1-4
+
 
 ## Run chess game with MATChess bot (white) vs. Stockfish engine (black):
 1. Build the matchess interfaces package from workspace root dir `ros2ws/`: `colcon build --packages-select matchess_interfaces`
