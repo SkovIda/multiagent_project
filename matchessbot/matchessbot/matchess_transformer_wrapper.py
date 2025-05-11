@@ -486,7 +486,7 @@ class MATChessTransformer:
         from ament_index_python.packages import get_package_share_directory
         checkpoint = torch.load(
             os.path.join(get_package_share_directory('matchessbot'), CONFIG['CHECKPOINT_FOLDER'], CONFIG['LOAD_MODEL_CHECKPOINT']),
-            weights_only=True,
+            map_location=self.DEVICE
         )
         
         
@@ -573,8 +573,9 @@ class MATChessTransformer:
                 model_inputs[key] = model_inputs[key].to(self.DEVICE)
             
 
-            with torch.autocast(
-                device_type=self.DEVICE.type, dtype=torch.float16, enabled=use_amp
+            # with torch.autocast(
+            with torch.cuda.amp.autocast(       # torch version 1.8.0
+                enabled=use_amp
             ):
                 if self.model_type == ModelType.MABC:
                     predicted_moves = self.model(model_inputs)
@@ -623,8 +624,8 @@ class MATChessTransformer:
         self.matchess_game_state.init_new_matchess_game()
         return
     
-# if __name__=='__main__':
+if __name__=='__main__':
 
-#     model_type = ModelType['MARL']
-#     model = MATChessTransformer()
-#     model.load_model(model_type)
+    model_type = ModelType['MARL']
+    model = MATChessTransformer()
+    model.load_model(model_type)
