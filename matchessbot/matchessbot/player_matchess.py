@@ -187,14 +187,11 @@ class MATChessPlayer(Node):
             for uci_move_str in self.game_state_hist:
                 self.update_game_state(uci_move_str)
 
-                self.update_agent_state(uci_move_str)
-
                 full_game_hist_string += uci_move_str
                 full_game_hist_string += " "
 
                 # Check if game is over:
-                if self.board_state.is_game_over(claim_draw=self.claim_draw_allowed):
-                    # TODO: handle rewards
+                if self.model.game_env_is_game_over(claim_draw_allowed=self.claim_draw_allowed):
                     self.get_logger().info('Game over with move: "%s"' % uci_move_str)
 
                     # Update game_status:
