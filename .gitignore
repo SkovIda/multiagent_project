@@ -1,6 +1,6 @@
 **/__pycache__/*
 **/training_runs/*
-matchessbot/tools/*
+matchessbot/tools_old/*
 **/astar_search/*
 **/*.png
 **/matchessbot/test_results/*
