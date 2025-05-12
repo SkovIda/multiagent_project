@@ -204,9 +204,9 @@ class PlayerStockfish(Node):
     def reset_game(self):
         self.engine_board = chess.Board()
         self.engine_board.reset()
-        self.prev_move_uci = ''
-        self.chosen_move_uci = ''
-        self.game_state_hist = []
+        # self.prev_move_uci = ''
+        # self.chosen_move_uci = ''
+        # self.game_state_hist = []
 
 
     def pub_game_status(self):
