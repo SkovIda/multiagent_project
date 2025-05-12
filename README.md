@@ -80,16 +80,20 @@ rosdep install --from-paths src/matchessbot/ --ignore-src -y --rosdistro=humble 
     cd ros2ws/
     source install/setup.bash
     ```
-1. Run the manager node, the ML agent node (player using the Machine Learning model to choose its next move), and the puzzle node (player using the stockfish engine to choose its next move):
-    - run matchess in puzzle mode:
-        ```
+1. run matchess in puzzle mode:
+    ```
+    ./src/matchessbot/scripts/run_matchess_puzzles.sh "<puzzle_idx>"
+    ```
+    - NOTE: Command above will run the manager node, the ML agent node (player using the Machine Learning model to choose its next move), and the puzzle node (player using the stockfish engine to choose its next move)
+
+    <!-- ```
         cd src/matchessbot/scripts/
         ./run_matchess.sh white black
-        ```
-    - The command above is equivalent to:
+        ```-->
+    <!-- - The command above is equivalent to:
         ```
         SINGLE_AGENT_COLOR=white ML_AGENT_COLOR=black ros2 launch matchessbot marl_vs_stockfish.launch.py
-        ```
+        ```  -->
 
 
 
