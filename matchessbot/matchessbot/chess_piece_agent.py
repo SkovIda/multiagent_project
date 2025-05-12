@@ -176,7 +176,15 @@ class ChessPieceAgent(Node):
             self.file_idx = chess.square_file(self.current_pos_square)
             self.rank_idx = chess.square_rank(self.current_pos_square)
 
-        # TODO: Handle en passant captures!!!
+        # TODO: Test if this handles en passant captures correctly!!!
+        if self.board_state.is_en_passant(self.last_recieved_move):
+            ep_captured_agent_rank = chess.square_rank(chess_move.from_square)
+            ep_captured_agent_file = chess.square_file(chess_move.to_square)
+            ep_captured_agent_square = chess.square(file_index=ep_captured_agent_file, rank_index=ep_captured_agent_rank)
+            if self.current_pos_square == ep_captured_agent_square:
+                self.is_alive = False
+
+
         return
     
     def choose_next_uci_move(self):
@@ -307,6 +315,10 @@ class ChessPieceAgent(Node):
         self.rank_idx = self.start_rank_idx
         self.current_pos_square = chess.square(file_index=self.file_idx, rank_index=self.rank_idx)
         self.is_alive = True
+        # TODO: Add the following lines to reset the agent properly?
+        # self.prev_move_uci = ''
+        # self.chosen_move_uci = ''
+        # self.game_state_hist = []
 
     def pub_game_status(self):
         msg_game_status = GameStatus()

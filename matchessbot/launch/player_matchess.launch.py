@@ -12,7 +12,7 @@ def generate_launch_description():
     arguments = []
     DEBUG_ENV = os.environ.get('MATCHESS_DEBUG', 'FALSE').lower() in ('true', '1', 't')
     if DEBUG_ENV:
-        arguments = ['--ros-args', '--log-level', ['matchessbot', ':=', 'DEBUG']]
+        arguments = ['--ros-args', '--log-level', ['player_matchess', ':=', 'DEBUG']]
 
     piece_color_launch_arg = DeclareLaunchArgument(
         'piece_color', default_value=TextSubstitution(text='white')
@@ -27,7 +27,7 @@ def generate_launch_description():
     ld.add_action(model_type_launch_arg)
 
     config_filename = ''
-    COLOUR = os.environ.get('SINGLE_AGENT_COLOR', 'WHITE').lower()
+    COLOUR = os.environ.get('ML_AGENT_COLOR', 'WHITE').lower()
     if COLOUR == 'white':
         # pieces = white_peices
         config_filename = 'white_single_agent_params.yaml'

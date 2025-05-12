@@ -148,7 +148,7 @@ class MATChessPlayer(Node):
         
         state_transition_observed = False
         if (self.prev_move_uci == msg.uci):
-            # Do nothing if this is the firt move in the game and the player is not white:
+            # Do nothing if this is the first move in the game and the player is not white:
             if self.prev_move_uci != "" and (self.piece_color != chess.WHITE):
                 return
         else:
@@ -281,4 +281,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-

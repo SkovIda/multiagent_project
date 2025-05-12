@@ -14,7 +14,7 @@ def generate_launch_description():
     arguments = []
     DEBUG_ENV = os.environ.get('MATCHESS_DEBUG', 'FALSE').lower() in ('true', '1', 't')
     if DEBUG_ENV:
-        arguments = ['--ros-args', '--log-level', ['matchessbot', ':=', 'DEBUG']]
+        arguments = ['--ros-args', '--log-level', ['player_stockfish', ':=', 'DEBUG']]
 
     piece_color_launch_arg = DeclareLaunchArgument(
         'piece_color', default_value=TextSubstitution(text='white')

@@ -204,6 +204,7 @@ class MatchessManager(Node):
 
         # Update global state and save render of board as .png:
         self.global_board_state.push_uci(str(self.previous_move_uci))
+        # TODO: Add visualization of the last move that was made on the board
         svg_text = chess.svg.board(
             self.global_board_state,
             size=350)
@@ -249,6 +250,7 @@ class MatchessManager(Node):
 
             # Update global state and save render of board as .png:
             self.global_board_state.push_uci(str(self.previous_move_uci))
+            # TODO: Add visualization of the last move that was made on the board
             svg_text = chess.svg.board(
                 self.global_board_state,
                 size=350)

@@ -18,15 +18,19 @@ rosdep install --from-paths src/matchessbot/ --ignore-src -y --rosdistro=humble 
     - NOTE: Don't use virtualenv. ros2 humble does not mix well with virtual envs. See cautionary note about virtual envs ROS2 in docs: https://docs.ros.org/en/jazzy/How-To-Guides/Using-Python-Packages.html#using-python-packages-with-ros-2
     - NOTE: need to install pytorch with pip because `python3-torch 1.8.1-4 (amd64 binary) in ubuntu jammy` (ubuntu 22.04) is a CPU-only version of PyTorch: https://launchpad.net/ubuntu/jammy/amd64/python3-torch/1.8.1-4
 
+## Build the packages
+1. Use `colcon` to build the packages from workspace root dir `ros2ws/`: `colcon build --packages-select matchessbot matchess_interfaces`
 
-## Run chess game with MATChess bot (white) vs. Stockfish engine (black):
-1. Build the matchess interfaces package from workspace root dir `ros2ws/`: `colcon build --packages-select matchess_interfaces`
-1. Build matchessbot package from workspace root dir `ros2ws/`: `colcon build --packages-select matchessbot`
+## Run MATChess game with 16 chess piece agents vs. various opponents:
+<!-- 1. Build the matchess interfaces package from workspace root dir `ros2ws/`: `colcon build --packages-select matchess_interfaces`
+1. Build matchessbot package from workspace root dir `ros2ws/`: `colcon build --packages-select matchessbot` -->
 1. Source the workspace (from `ros2ws/` in terminal): `source install/setup.bash`
 1. set ros middleware layer to use cyclonedds: `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` (fastdds loses messages with reliable QoS profile)
 1. Launch the MATChess Game Manager and a team of 16 chess piece agents:
-    1. Launch the MATChess Game Manager and all 16 chess piece agents on the WHITE team: `ros2 launch matchessbot matchess.launch.py`
-    1. Or launch the Matchess Game Manager and a team of chess piece agents seperately:
+    - Launch the MATChess Game Manager and all chess piece agents on the:
+        - white team: `ros2 launch matchessbot matchess.launch.py`
+        - black team: `MATCHESS_TEAM_COLOR=black ros2 launch matchessbot matchess.launch.py`
+    - Or launch the Matchess Game Manager and a team of chess piece agents seperately:
         1. Run the MATChess Game Manager: `ros2 launch matchessbot matchess_manager.launch.py`
         1. Launch all 16 pieces on a team:
             - All white pieces: `MATCHESS_TEAM_COLOR=white ros2 launch matchessbot chess_piece_agent_launch_all.launch.py`
@@ -38,6 +42,9 @@ rosdep install --from-paths src/matchessbot/ --ignore-src -y --rosdistro=humble 
     1. Launch another team of 16 chess piece agents:
         - All white pieces: `MATCHESS_TEAM_COLOR=white ros2 launch matchessbot chess_piece_agent_launch_all.launch.py`
         - All black pieces: `MATCHESS_TEAM_COLOR=black ros2 launch matchessbot chess_piece_agent_launch_all.launch.py`
+    1. Launch the multi-agent machine learning model from a "single-agent" chess player, where the model is used to obtain the MoveVotes from each of the 16 individual chess piece agents on the team, collect and count those votes, before sending a single MoveVote to the manager with the result:
+        - The team of white pieces:`ML_AGENT_COLOR=white ros2 launch matchessbot player_matchess.launch.py`
+        - The team of black pieces: `ML_AGENT_COLOR=black ros2 launch matchessbot player_matchess.launch.py`
 1. Init new game:
     <!-- `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/out matchess_interfaces/msg/ChessMove "uci: ''" --once --qos-reliability reliable` -->
     1. source the workspace: `source ros2ws/install/setup.bash`
@@ -66,6 +73,23 @@ rosdep install --from-paths src/matchessbot/ --ignore-src -y --rosdistro=humble 
         RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 topic pub /matchess/ui_cli matchess_interfaces/msg/GameStatus "{status_str: 'START_GAME',status_int: 2}" --once --qos-reliability reliable --qos-durability transient_local
         ```
     
+
+## Run MATChess in puzzle mode:
+1. Setup
+    ```
+    cd ros2ws/
+    source install/setup.bash
+    ```
+1. Run the manager node, the ML agent node (player using the Machine Learning model to choose its next move), and the puzzle node (player using the stockfish engine to choose its next move):
+    - run matchess in puzzle mode:
+        ```
+        cd src/matchessbot/scripts/
+        ./run_matchess.sh white black
+        ```
+    - The command above is equivalent to:
+        ```
+        SINGLE_AGENT_COLOR=white ML_AGENT_COLOR=black ros2 launch matchessbot marl_vs_stockfish.launch.py
+        ```
 
 
 
