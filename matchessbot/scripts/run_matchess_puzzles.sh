@@ -7,13 +7,16 @@ PUZZLE_DATASET_NAME="puzzles.csv"
 init_puzzle_nodes(){
     local puzzles_csv="$SCRIPT_DIR/../tools/puzzles.csv"
 
+    local puzzle_id=$(python3 $SCRIPT_DIR/../tools/read_csv_row.py --csv_file $puzzles_csv --row_number $1 --result 'puzzle_id')
+    echo "puzzle_id: $puzzle_id"
+
     local puzzle_color=$(python3 $SCRIPT_DIR/../tools/read_csv_row.py --csv_file $puzzles_csv --row_number $1 --result 'puzzle_color')
     echo "puzzle_color: $puzzle_color"
 
     local solver_color=$(python3 $SCRIPT_DIR/../tools/read_csv_row.py --csv_file $puzzles_csv --row_number $1 --result 'player_color')
     echo "solver_color: $solver_color"
 
-    DEBUG_ENV=true SINGLE_AGENT_COLOR=$puzzle_color ML_AGENT_COLOR=$solver_color ros2 launch matchessbot marl_vs_stockfish.launch.py 2>&1 &
+    DEBUG_ENV=true PUZZLE_ID=$puzzle_id SINGLE_AGENT_COLOR=$puzzle_color ML_AGENT_COLOR=$solver_color ros2 launch matchessbot marl_vs_stockfish.launch.py 2>&1 &
 }
 
 

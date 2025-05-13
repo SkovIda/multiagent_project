@@ -1,4 +1,6 @@
 import os
+import time
+
 from launch_ros.substitutions import FindPackageShare
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
@@ -9,13 +11,27 @@ import launch.actions
 import launch.event_handlers
 from launch_ros.actions import Node
 
+from launch.substitutions import TextSubstitution
+from launch.actions import DeclareLaunchArgument
 
 def generate_launch_description():
     os.environ['RMW_IMPLEMENTATION'] = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
     # fast dds loses messages in reliable mode
 
+    ld = LaunchDescription()
 
-    launches = []
+    puzzle_mode_launch_arg = DeclareLaunchArgument(
+        'puzzle_mode', default_value=TextSubstitution(text='True')
+    )
+    ld.add_action(puzzle_mode_launch_arg)
+
+    test_data_dir_launch_arg = DeclareLaunchArgument(
+        'test_save_dir', default_value=TextSubstitution(text='test_data/puzzles/XXX_time/')
+    )
+    ld.add_action(test_data_dir_launch_arg)
+
+
+    # launches = []
     chess_team = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -23,7 +39,8 @@ def generate_launch_description():
             ])
         ])
     )
-    launches.append(chess_team)
+    # launches.append(chess_team)
+    ld.add_action(chess_team)
 
     # manager = IncludeLaunchDescription(
     #     PythonLaunchDescriptionSource([
@@ -38,13 +55,32 @@ def generate_launch_description():
     if DEBUG_ENV:
         arguments = ['--ros-args', '--log-level', ['matchess_manager', ':=', 'DEBUG']]
 
+
+    GAME_ID_ENV = os.environ.get('GAME_ID', 'unknown')
+    default_save_dir = 'test_data/games/'
+    game_test_timestamp = str(int(time.time()))
+    test_save_dir_param = default_save_dir + GAME_ID_ENV + '_' + game_test_timestamp + '/'
+
     manager = Node(
         package='matchessbot',
         executable='matchess_manager',
         name= 'matchess_manager',
+        parameters=[
+            {'puzzle_mode': str(False)},
+            {'test_save_dir': str(test_save_dir_param)}
+            ],
         arguments=arguments
     )
-    launches.append(manager)
+    ld.add_action(manager)
+
+
+    # manager = Node(
+    #     package='matchessbot',
+    #     executable='matchess_manager',
+    #     name= 'matchess_manager',
+    #     arguments=arguments
+    # )
+    # ld.add_action(manager)
 
     #shut down if manager dies
     manager_event_handler = launch.actions.RegisterEventHandler(
@@ -60,6 +96,6 @@ def generate_launch_description():
             ]
         )
     )
-    launches.append(manager_event_handler)
+    ld.add_action(manager_event_handler)
 
-    return LaunchDescription(launches)
+    return ld # LaunchDescription(launches)

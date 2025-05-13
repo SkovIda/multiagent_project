@@ -24,7 +24,7 @@ def _parse_args():
                         help='absolute path to the csv file')
     parser.add_argument('--row_number', type=int, default=0,
                         help='the row number of the csv file to return')
-    parser.add_argument('--result', type=str, choices=['move_hist', 'puzzle_color', 'player_color'], required=True)
+    parser.add_argument('--result', type=str, choices=['move_hist', 'puzzle_color', 'player_color', 'puzzle_id'], required=True)
     
     args = parser.parse_args()
     return args
@@ -93,6 +93,8 @@ if __name__=='__main__':
             print(puzzle_plays_as_color(uci_move_hist))
         elif args.result == 'player_color':
             print(puzzle_solver_color(uci_move_hist))
+        elif args.result == 'puzzle_id':
+            print(row[COLUMN_IDX_PUZZLE_ID])
 
         # print(f"{puzzle_plays_as_color(uci_move_hist, solution_str)} {puzzle_solver_color(uci_move_hist, solution_str)} {uci_move_hist}")
         

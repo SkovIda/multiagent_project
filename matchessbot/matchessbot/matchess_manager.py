@@ -1,14 +1,13 @@
+import os
+
 import json
 
 import rclpy
 import rclpy.logging
 import rclpy.qos
 
-###############################################################################
-# NOTE: Use this as inspiration for creating MatchessManager (which should be an interface between all the agents on the team and some chess game API/engine???):
-# https://github.com/Shaswat2001/Multi_Agent_Path_Finding/blob/main/marl_planner/scripts/main.py
-# from pettingzoo.classic import chess_v6
-# from pettingzoo.classic.chess import chess_utils
+from rcl_interfaces.msg import ParameterType, ParameterDescriptor
+
 from rclpy.node import Node
 
 from std_msgs.msg import String
@@ -24,6 +23,9 @@ import chess
 import chess.svg
 from cairosvg import svg2png
 
+import csv
+
+# from pathlib import Path
 
 class MatchessManager(Node):
     def __init__(self, ChessComm, config_filename: str='matches_manager_config.txt', use_pettingzoo_env: bool=True, train: bool=False):
@@ -36,7 +38,23 @@ class MatchessManager(Node):
         #         'black_player': 'matchessbot',
         #         'game_history': [],
         #         }
+        self.declare_parameters(
+            namespace='',
+            parameters=[
+                ('puzzle_mode', None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING, description='Set to true to start the manager in puzzle mode')),
+                ('test_save_dir', None, ParameterDescriptor(type=ParameterType.PARAMETER_STRING, description='Directory where the output of the matchess manager will be saved')),
+            ]
+        )
+        # self.is_puzzle_mode = True
+        # self.test_data_dir = "test_data/puzzles/XXX_datetime/"  # TODO: Add Launch argument with dir for the specific puzzle with timestamp!
+        is_puzzle_mode_param = self.get_parameter('puzzle_mode').get_parameter_value().string_value
+        self.is_puzzle_mode = True if is_puzzle_mode_param.lower() in ['true', '1'] else False
+        self.test_data_dir = self.get_parameter('test_save_dir').get_parameter_value().string_value
 
+        self.get_logger().info(f"Starting MATChess Manager in puzzle mode = {self.is_puzzle_mode}")
+        self.get_logger().info(f"Saving test data to file: {self.test_data_dir}")
+        
+        
 
         self.qos = rclpy.qos.QoSProfile(
             reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, 
@@ -120,29 +138,63 @@ class MatchessManager(Node):
 
         # Logging:
         self.global_board_state = chess.Board()
+
+        render_board_imgs_path = self.test_data_dir + 'render_board/'            
+        # is dir
+        if not os.path.isdir(render_board_imgs_path):
+            os.makedirs(render_board_imgs_path)
+        else:
+            self.get_logger().error("test data save dir exists already")
         
-        svg_text = chess.svg.board(
-                self.global_board_state,
-                # fill=dict.fromkeys(self.global_board_state.attacks(chess.E4), "#cc0000cc"),
-                # arrows=[chess.svg.Arrow(chess.E4, chess.F6, color="#0000cccc")],
-                # squares=chess.SquareSet(chess.BB_DARK_SQUARES & chess.BB_FILE_B),
-                size=350)
-        self.game_hist_path_prefix = 'test_data/games/test_render_board_'
-
-        hist_log_img_filename = self.game_hist_path_prefix + str(self.game_half_move_count)
-        self.hist_log_moves_filename = 'test_data/games/game_hist.txt'
-
-        self.log_game_vote_hist_filename = 'test_data/games/log_game_vote_hist.json'
-
-        # # Save img of initial state as .svg:
-        # with open(hist_log_img_filename + '.svg', 'w') as f:
-        #     f.write(svg_text)
+        self.game_hist_path_prefix = self.test_data_dir + 'render_board/img_'
+        self.hist_log_moves_filename = self.test_data_dir + 'game_hist.csv'
+        self.log_game_vote_hist_filename = self.test_data_dir + 'log_game_vote_hist.json'
         
-        # Save img of initial state as .png:
-        svg2png(bytestring=svg_text, write_to=hist_log_img_filename + '.png')
+        if not self.is_puzzle_mode:
+            svg_text = chess.svg.board(
+                    self.global_board_state,
+                    # fill=dict.fromkeys(self.global_board_state.attacks(chess.E4), "#cc0000cc"),
+                    # arrows=[chess.svg.Arrow(chess.E4, chess.F6, color="#0000cccc")],
+                    # squares=chess.SquareSet(chess.BB_DARK_SQUARES & chess.BB_FILE_B),
+                    size=350)
+            # self.game_hist_path_prefix = 'test_data/games/test_render_board_'
+
+            hist_log_img_filename = self.game_hist_path_prefix + str(self.game_half_move_count)
+            # #self.hist_log_moves_filename = 'test_data/games/game_hist.txt'
+            # self.hist_log_moves_filename = 'test_data/games/game_hist.csv'
+
+            # self.log_game_vote_hist_filename = 'test_data/games/log_game_vote_hist.json'
+
+            # # # Save img of initial state as .svg:
+            # # with open(hist_log_img_filename + '.svg', 'w') as f:
+            # #     f.write(svg_text)
+            
+            # # Save img of initial state as .png:
+            svg2png(bytestring=svg_text, write_to=hist_log_img_filename + '.png')
+
+            # with open(self.hist_log_moves_filename, 'w') as f:
+            #     #f.write('Game log (half moves):')
+            #     csv_writer = csv.writer(f)
+            #     csv_writer.writerow(['halfmove', 'uci'])
+        # else:
+        #     render_board_imgs_path = self.test_data_dir + 'render_board/'
+            
+        #     # is dir
+        #     if not os.path.isdir(render_board_imgs_path):
+        #         os.makedirs(render_board_imgs_path)
+        #     else:
+        #         print("puzzle dir exists already")
+            
+        #     self.game_hist_path_prefix = self.test_data_dir + 'render_board/img_'
+        #     # self.hist_log_moves_filename = self.puzzle_dir + 'game_hist.txt'
+        #     self.hist_log_moves_filename = self.test_data_dir + 'game_hist.csv'
+        #     self.log_game_vote_hist_filename = self.test_data_dir + 'log_game_vote_hist.json'
 
         with open(self.hist_log_moves_filename, 'w') as f:
-            f.write('Game log (half moves):')
+            csv_writer = csv.writer(f)
+            csv_writer.writerow(['halfmove', 'uci'])
+
+        
 
         self.game_state_move_hist = []
         self.wait_for_move_hist_from_user = False
@@ -207,6 +259,7 @@ class MatchessManager(Node):
         # TODO: Add visualization of the last move that was made on the board
         svg_text = chess.svg.board(
             self.global_board_state,
+            lastmove=chess.Move.from_uci(str(self.previous_move_uci)),
             size=350)
 
         hist_log_img_filename = self.game_hist_path_prefix + str(self.game_half_move_count)
@@ -217,9 +270,13 @@ class MatchessManager(Node):
         # Save img of initial state as .png:
         svg2png(bytestring=svg_text, write_to=hist_log_img_filename + '.png')
         
+        # with open(self.hist_log_moves_filename, 'a') as f:
+        #     f.write('\n' + str(self.game_half_move_count) + '.\t' + str(self.previous_move_uci))
+        #     f.close()
         with open(self.hist_log_moves_filename, 'a') as f:
-            f.write('\n' + str(self.game_half_move_count) + '.\t' + str(self.previous_move_uci))
-            f.close()
+            #f.write('Game log (half moves):')
+            csv_writer = csv.writer(f)
+            csv_writer.writerow([self.game_half_move_count, self.previous_move_uci])
 
         with open(self.log_game_vote_hist_filename, 'w') as log_game_vote_hist_file:
             json.dump(self.log_game_hist, log_game_vote_hist_file)
@@ -250,29 +307,56 @@ class MatchessManager(Node):
 
             # Update global state and save render of board as .png:
             self.global_board_state.push_uci(str(self.previous_move_uci))
-            # TODO: Add visualization of the last move that was made on the board
-            svg_text = chess.svg.board(
-                self.global_board_state,
-                size=350)
+            # # TODO: Add visualization of the last move that was made on the board
+            # svg_text = chess.svg.board(
+            #     self.global_board_state,
+            #     size=350)
 
-            hist_log_img_filename = self.game_hist_path_prefix + str(self.game_half_move_count)
+            # hist_log_img_filename = self.game_hist_path_prefix + str(self.game_half_move_count)
             
-            # Save img of initial state as .png:
-            svg2png(bytestring=svg_text, write_to=hist_log_img_filename + '.png')
+            # # Save img of initial state as .png:
+            # svg2png(bytestring=svg_text, write_to=hist_log_img_filename + '.png')
             
-            with open(self.hist_log_moves_filename, 'a') as f:
-                f.write('\n' + str(self.game_half_move_count) + '.\t' + str(self.previous_move_uci))
-                f.close()
+            # with open(self.hist_log_moves_filename, 'a') as f:
+            #     f.write('\n' + str(self.game_half_move_count) + '.\t' + str(self.previous_move_uci))
+            #     f.close()
 
-            with open(self.log_game_vote_hist_filename, 'w') as log_game_vote_hist_file:
-                json.dump(self.log_game_hist, log_game_vote_hist_file)
-                log_game_vote_hist_file.close()
+            # with open(self.log_game_vote_hist_filename, 'w') as log_game_vote_hist_file:
+            #     json.dump(self.log_game_hist, log_game_vote_hist_file)
+            #     log_game_vote_hist_file.close()
+        
+        # TODO: Add visualization of the last move that was made on the board
+        # self.game_hist_path_prefix = 'test_data/puzzles/test_render_board_'
+        # self.hist_log_moves_filename = 'test_data/puzzles/game_hist.txt'
+        # self.log_game_vote_hist_filename = 'test_data/puzzles/log_game_vote_hist.json'
+        
+        svg_text = chess.svg.board(
+            self.global_board_state,
+            lastmove=chess.Move.from_uci(str(self.previous_move_uci)),
+            size=350
+            )
+
+        hist_log_img_filename = self.game_hist_path_prefix + str(self.game_half_move_count)
+        
+        # Save img of initial state as .png:
+        svg2png(bytestring=svg_text, write_to=hist_log_img_filename + '.png')
+        
+        with open(self.hist_log_moves_filename, 'a') as f:
+            csv_writer = csv.writer(f,delimiter=',')
+            # csv_writer.writerow([str(self.game_half_move_count), str(self.previous_move_uci)])
+            csv_writer.writerow([self.game_half_move_count, self.previous_move_uci])
+            # f.write('\n' + str(self.game_half_move_count) + '.\t' + str(self.previous_move_uci))
+            # f.close()
+
+        with open(self.log_game_vote_hist_filename, 'w') as log_game_vote_hist_file:
+            json.dump(self.log_game_hist, log_game_vote_hist_file)
+            log_game_vote_hist_file.close()
 
         # Publish the list of UCI moves to all the agents
         msg_out_setup_hist = GameHist()
         msg_out_setup_hist.move_hist_uci = self.game_state_move_hist
         self.game_status_hist_pub.publish(msg_out_setup_hist)
-        self.get_logger().debug("pub GameHist to all agents. first move = %s" % msg_out_setup_hist.move_hist_uci[0])
+        # self.get_logger().debug("pub GameHist to all agents. first move = %s" % msg_out_setup_hist.move_hist_uci[0])
 
         # Clear game_state_move_hist list:
         self.game_state_move_hist = []
