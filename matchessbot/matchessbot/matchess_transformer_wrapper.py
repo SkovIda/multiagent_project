@@ -624,6 +624,114 @@ class MATChessTransformer:
         self.matchess_game_state.init_new_matchess_game()
         return
     
+    def mas_play(self):
+        agent_move_votes = self.model_agent_move_votes(use_amp=True, k=1, show_board=False)
+        return agent_move_votes
+    
+    def model_agent_move_votes(
+        self,
+        # model,
+        # board,
+        use_amp,
+        k,
+        # model_name=None,
+        # opponent_name=None,
+        show_board=True,
+        ):
+        """
+        Have the model make the next move on the board.
+
+        Args:
+
+            config_name (str): The name of the model configuration (which
+            describes the type of model).
+
+            model (torch.nn.Module): The model.
+
+            board (chess.Board): The chessboard in its current state.
+
+            use_amp (bool): Use automatic mixed precision?
+
+            k (int): The "k" in "top-k" sampling, for sampling the model's
+            predicted moves.
+
+            model_name (str, optional): The name of the model, for
+            displaying in status messages. Defaults to None.
+
+            opponent_name (str, optional): The name of the model's opponent,
+            for displaying in status messages. Defaults to None.
+
+            show_board (bool, optional): Display the board (along with a
+            status message) upon making the move?
+
+        Returns:
+
+            chess.Board: The chessboard after the model makes its move.
+        """
+        agent_token_move_preds = []
+        # Get predictions
+        self.model.eval()
+        with torch.no_grad():
+            # Get list of legal moves for the current position
+            legal_moves = [move.uci() for move in self.matchess_game_state.board.legal_moves]
+
+            # Get model inputs
+            game_state = self.matchess_game_state.get_game_state()
+            model_inputs = self.tokenizer.encode_model_input_v2(game_state=game_state, chess_piece_agent_ids=self.chess_piece_agent_ids, chess_piece_agent_reward_weights=self.chess_piece_agent_reward_weights)
+
+            # Move to default device
+            for key in model_inputs:
+                model_inputs[key] = model_inputs[key].to(self.DEVICE)
+            
+
+            # with torch.autocast(
+            with torch.cuda.amp.autocast(       # torch version 1.8.0
+                enabled=use_amp
+            ):
+                if self.model_type == ModelType.MABC:
+                    predicted_moves = self.model(model_inputs)
+                elif self.model_type == ModelType.MARL:
+                    predicted_moves, predicted_rewards = self.model(model_inputs)
+                else:
+                    raise NotImplementedError(f"The loaded model is not a valid model type! Valid model types are: {self.valid_model_types}")
+                
+            # Filter out move indices corresponding to illegal moves
+            legal_move_indices = [UCI_MOVES[m] for m in legal_moves]
+
+            # move_votes = {}
+            
+            agent_votes = {}
+            agent_team_color = 'white' if self.game_env_turn_color() == chess.WHITE else 'black'
+
+            for agent_idx in range(self.n_agents):
+                # Perform action sampling to obtain a legal predicted move
+                if not self.matchess_game_state.all_state_attributes_per_agent_before_action[-1][agent_team_color][self.chess_piece_agent_ids[agent_idx]]['is_alive']:
+                    continue
+                
+                if self.voting_scheme == 'democracy':
+                    legal_move_index = self.sample_action(
+                        policy_logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
+                        reward_logits=predicted_rewards[:, agent_idx, :],
+                        batch_size=self.batch_size,
+                        k=k,
+                    ).item()
+                    
+                    # Keep track of all agent's votes:
+                    agent_votes[self.chess_piece_agent_ids[agent_idx]] = legal_moves[legal_move_index]
+
+                    # agent_vote = legal_moves[legal_move_index]
+                    # if not agent_vote in move_votes.keys():
+                    #     move_votes[agent_vote] = 0
+                    # move_votes[agent_vote] += 1
+            
+            # print(move_votes)
+
+            # model_move = max(move_votes, key=move_votes.get)
+
+            # return model_move
+            return agent_votes
+
+    
 if __name__=='__main__':
 
     model_type = ModelType['MARL']

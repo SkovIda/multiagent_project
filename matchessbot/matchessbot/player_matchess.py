@@ -39,6 +39,8 @@ class MATChessPlayer(Node):
         model_type_param = self.get_parameter('model_type').get_parameter_value().string_value
         self.model_type = ModelType[model_type_param]
 
+        self.pub_multi_agent_votes = True
+
         self.model = MATChessTransformer()
         self.model.load_model(self.model_type)
 
@@ -119,21 +121,36 @@ class MATChessPlayer(Node):
         
     def pub_agent_decision(self, state_transition_observed):
         if self.model.game_env_turn_color() == self.piece_color:
-            if state_transition_observed:
-                self.choose_next_uci_move()
+            if not self.pub_multi_agent_votes:
+                if state_transition_observed:
+                    self.choose_next_uci_move()
 
-                temp_debug_log = 'Agent: ' + self.agentname + '\tMoveVote: ' + self.chosen_move_uci
-                self.get_logger().debug(temp_debug_log)
+                    temp_debug_log = 'Agent: ' + self.agentname + '\tMoveVote: ' + self.chosen_move_uci
+                    self.get_logger().debug(temp_debug_log)
 
-            msg_out = ChessMoveVote()
-            msg_out.uci = self.chosen_move_uci
-            msg_out.agentname = self.agentname # chess.square_name(self.current_pos_square)
-            
-            # alive_pieces_on_team = {key: value for key, value in self.board_state.piece_map().items() if value.color == self.piece_color}
-            msg_out.agentcount = int(1)
-            
-            self.publisher_.publish(msg_out)
-            self.get_logger().debug('Pub MoveVote: "%s"' % msg_out.uci)
+                msg_out = ChessMoveVote()
+                msg_out.uci = self.chosen_move_uci
+                msg_out.agentname = self.agentname # chess.square_name(self.current_pos_square)
+                
+                # alive_pieces_on_team = {key: value for key, value in self.board_state.piece_map().items() if value.color == self.piece_color}
+                msg_out.agentcount = int(1)
+                
+                self.publisher_.publish(msg_out)
+                self.get_logger().debug('Pub MoveVote: "%s"' % msg_out.uci)
+            else:
+                agent_movevote_dict = self.model.mas_play()
+
+                alive_agents_count = int(len(agent_movevote_dict))
+                # alive_pieces_on_team = {key: value for key, value in self.board_state.piece_map().items() if value.color == self.piece_color}
+
+                for key, item in agent_movevote_dict.items():
+                    msg_out = ChessMoveVote()
+                    msg_out.uci = item
+                    msg_out.agentname = str(key) # chess.square_name(self.current_pos_square)
+                    msg_out.agentcount = alive_agents_count
+                
+                    self.publisher_.publish(msg_out)
+                    self.get_logger().debug(f"Agent: {msg_out.agentname} pub: MoveVote={msg_out.uci}")
         return
     
     def listener_callback(self, msg):
