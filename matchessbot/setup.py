@@ -8,6 +8,7 @@ package_name = 'matchessbot'
 setup(
     name=package_name,
     version='0.0.0',
+    # package_dir={"matchess_transformer": "matchessbot/matchess_transformer/matchess_transformer"},
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -15,6 +16,14 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name), glob('launch/*launch.[pxy][yma]*')),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        # (os.path.join('lib', package_name, 'training_runs'), 
+        #  glob('matchessbot/matchess_transformer/training_runs/**/*.pt')),
+        (os.path.join('share', package_name, 'training_runs'), 
+         glob('matchessbot/matchess_transformer/training_runs/MATChessFormer-Heterogeneous-20/model_checkpoints/run_2/checkpoint_epoch_75_MATChessFormer-Heterogeneous-20.pt')),
+         (os.path.join('share', package_name, 'training_runs'), 
+         glob('matchessbot/matchess_transformer/training_runs/MATChessFormer-Homogeneous-20/model_checkpoints/run_1/checkpoint_epoch_60_MATChessFormer-Homogeneous-20.pt')),
+         (os.path.join('share', package_name, 'training_runs'), 
+         glob('matchessbot/matchess_transformer/training_runs/MATChessFormer-ImitativeRL-20/model_checkpoints/run_5/checkpoint_epoch_75_MATChessFormer-ImitativeRL-20.pt')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -29,6 +38,7 @@ setup(
             'matchess_manager = matchessbot.matchess_manager:main',
             'player_stockfish = matchessbot.player_stockfish:main',
             'player_toga2 = matchessbot.player_toga2:main',
+            'player_matchess = matchessbot.player_matchess:main'
         ],
     },
 )

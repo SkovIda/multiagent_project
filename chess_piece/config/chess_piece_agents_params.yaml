@@ -1,0 +1,17 @@
+chess_piece_agent:
+  ros__parameters:
+    piece_color: white
+    piece_type: pawn
+    pos_square_idx: 8
+
+white_king:
+  ros__parameters:
+    piece_color: white
+    piece_type: king
+    pos_square_idx: 4
+
+white_queen:
+  ros__parameters:
+    piece_color: white
+    piece_type: queen
+    pos_square_idx: 4

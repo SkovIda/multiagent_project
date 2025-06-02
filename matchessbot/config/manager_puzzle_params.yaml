@@ -1,0 +1,4 @@
+matchess_manager:
+  ros__parameters:
+    puzzle_mode: False
+    test_save_dir: test_data/games/
