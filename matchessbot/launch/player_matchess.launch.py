@@ -18,7 +18,7 @@ def generate_launch_description():
         'piece_color', default_value=TextSubstitution(text='white')
     )
     model_type_launch_arg = DeclareLaunchArgument(
-        'model_type', default_value=TextSubstitution(text='MARL')
+        'model_type', default_value=TextSubstitution(text='IRL')
     )
 
 
@@ -28,14 +28,29 @@ def generate_launch_description():
 
     config_filename = ''
     COLOUR = os.environ.get('ML_AGENT_COLOR', 'WHITE').lower()
-    if COLOUR == 'white':
-        # pieces = white_peices
-        config_filename = 'white_single_agent_params.yaml'
-    elif COLOUR == 'black':
-        # pieces = black_pieces
-        config_filename = 'black_single_agent_params.yaml'
+    ML_MODEL_TYPE = os.environ.get('ML_AGENT_MODEL_TYPE', 'IRL').lower()
+    if ML_MODEL_TYPE == 'irl':
+        if COLOUR == 'white':
+            # pieces = white_peices
+            config_filename = 'white_single_agent_params.yaml'
+        elif COLOUR == 'black':
+            # pieces = black_pieces
+            config_filename = 'black_single_agent_params.yaml'
+        else:
+            print(f'Unknown color set [{COLOUR}]')
+            exit(1)
+    elif ML_MODEL_TYPE == 'sil':
+        if COLOUR == 'white':
+            # pieces = white_peices
+            config_filename = 'player_matchess_sil_model_white_params.yaml'
+        elif COLOUR == 'black':
+            # pieces = black_pieces
+            config_filename = 'player_matchess_sil_model_black_params.yaml'
+        else:
+            print(f'Unknown color set [{COLOUR}]')
+            exit(1)
     else:
-        print(f'Unknown color set [{COLOUR}]')
+        print(f'Unknown model type set [{ML_MODEL_TYPE}]')
         exit(1)
 
     # Load config file for chess piece agents:

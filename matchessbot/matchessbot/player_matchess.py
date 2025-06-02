@@ -45,6 +45,7 @@ class MATChessPlayer(Node):
         self.model.load_model(self.model_type)
 
         self.agentname = str(self.model_type.name) + 'Bot' #self.model.model_name #'matchess_player'
+        self.get_logger().info('Loaded model with type: "%s"' % self.model_type.name)
 
         self.claim_draw_allowed = True
 

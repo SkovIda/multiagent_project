@@ -156,7 +156,7 @@ class PlayerStockfish(Node):
             self.get_logger().debug('Current state: "%s"' % self.engine_board.fen())
 
         # Log the incomming message:
-        self.get_logger().debug('Recieved Obs. Move: "%s"' % msg.uci)
+        self.get_logger().info('Recieved Obs. Move: "%s"' % msg.uci)
 
         if msg.uci != "":
             self.update_game_state(msg.uci)

@@ -19,7 +19,7 @@ init_puzzle_nodes(){
     local solver_color=$(python3 $SCRIPT_DIR/../tools/read_csv_row.py --csv_file $puzzles_csv --row_number $1 --result 'player_color')
     echo "solver_color: $solver_color"
 
-    MATCHESS_DEBUG=false TEST_ID=$TEST_TIMESTAMP PUZZLE_ID=$puzzle_id SINGLE_AGENT_COLOR=$puzzle_color ML_AGENT_COLOR=$solver_color ros2 launch matchessbot marl_vs_stockfish.launch.py 2>&1 &
+    MATCHESS_DEBUG=false ML_AGENT_MODEL_TYPE=SIL TEST_ID=$TEST_TIMESTAMP PUZZLE_ID=$puzzle_id SINGLE_AGENT_COLOR=$puzzle_color ML_AGENT_COLOR=$solver_color ros2 launch matchessbot marl_vs_stockfish.launch.py 2>&1 &
 }
 
 

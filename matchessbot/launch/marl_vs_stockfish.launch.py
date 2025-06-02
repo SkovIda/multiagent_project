@@ -60,9 +60,14 @@ def generate_launch_description():
     
 
     PUZZLE_ID_ENV = os.environ.get('PUZZLE_ID', 'unknown')
+    
     default_save_dir = 'test_data/puzzles/'
+
     puzzle_test_timestamp = str(int(time.time()))
-    test_save_dir_param = default_save_dir + PUZZLE_ID_ENV + '_' + puzzle_test_timestamp + '/'
+    TEST_ID_ENV = os.environ.get('TEST_ID', puzzle_test_timestamp)
+
+    # test_save_dir_param = default_save_dir + PUZZLE_ID_ENV + '_' + puzzle_test_timestamp + '/'
+    test_save_dir_param = default_save_dir + 'test_' + TEST_ID_ENV + '/' + PUZZLE_ID_ENV + '/'
 
     manager = Node(
         package='matchessbot',

@@ -24,7 +24,7 @@ class MATChessDataset(Dataset):
     chess_piece_agent_reward_weights = [[1.0] * reward_types_len] * len(chess_piece_agent_ids)
     
 
-    def __init__(self, tokenizer: Tokenizer, dataset_path: str, n_datapoints=None, **unused):
+    def __init__(self, tokenizer: Tokenizer, dataset_path: str, n_datapoints=None, per_agent_reward_weights=chess_piece_agent_reward_weights,**unused):
         self.tokenizer = tokenizer
         self.games = []
 
@@ -44,7 +44,7 @@ class MATChessDataset(Dataset):
                         'rewards': {}
                     }
                 dict_entry = json.loads(line)
-                self.games.append(copy.deepcopy(self.tokenizer.encode_pgn_dataset_entry(dict_entry, chess_piece_agent_ids=self.chess_piece_agent_ids, chess_piece_agent_reward_weights=self.chess_piece_agent_reward_weights)))
+                self.games.append(copy.deepcopy(self.tokenizer.encode_pgn_dataset_entry(dict_entry, chess_piece_agent_ids=self.chess_piece_agent_ids, chess_piece_agent_reward_weights=per_agent_reward_weights)))
                 
                 n_datapoint_counter += 1
                 if n_datapoints is not None:

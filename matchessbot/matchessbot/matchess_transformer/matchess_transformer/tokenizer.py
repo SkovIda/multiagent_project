@@ -116,9 +116,16 @@ class Tokenizer:
         board.set_fen(pgn_dataset_entry['state']['fen'])
 
         # If blacks turn, mirror the board and invert colors of the pieces => "model always thinks it is playing as white"
-        if board.turn is not chess.WHITE:
+        # if board.turn is not chess.WHITE:
+        #     board.apply_mirror()
+        #     agent_states = [chess.square_mirror(agent_pos) for agent_pos in agent_states]
+        # agents_pos_temp_list = [square_idx if square_idx >= 0 else self.encode(self.pad_token, vocabulary=AGENT_POS) for square_idx in game_state['state']['agent_pos_square_idx']]
+
+        # If blacks turn, mirror the board and invert colors of the pieces => "model always thinks it is playing as white"
+        if board.turn is chess.BLACK:
             board.apply_mirror()
-            agent_states = [chess.square_mirror(agent_pos) for agent_pos in agent_states]
+            # agent_states = [chess.square_mirror(agent_pos) for agent_pos in agent_states]
+            # agents_pos_temp_list = [chess.square_mirror(square_idx) if square_idx >= 0 else self.encode(self.pad_token, vocabulary=AGENT_POS) for square_idx in game_state['state']['agent_pos_square_idx']]
 
         ##### Castling Rights:
         board_str, turn, castling_rights, ep_square, _, __ = board.fen().split() # NOTE: The ep_square output from this is wrong!: print(ep_square)
@@ -167,13 +174,21 @@ class Tokenizer:
             [self.encode(pgn_dataset_entry['action'], vocabulary=UCI_MOVES)] * len(chess_piece_agent_ids)
         ) # (n_agents) = (16)
 
+        # print("\n\nkey: \tvalue:")
         target_rewards = []
         for key, reward_weights_agent_i in pgn_dataset_entry['rewards'].items():
             target_rewards.append(reward_weights_agent_i)
+            # print(f"{key}\t{reward_weights_agent_i}")
+            
+
+        weighted_target_rewards = torch.FloatTensor(target_rewards).transpose(1,0)
+        # print(f"\ntarget_rewards as transposed tensor:\n{weighted_target_rewards}")
 
         weighted_target_rewards = torch.FloatTensor(
                 chess_piece_agent_reward_weights).mul(torch.FloatTensor(target_rewards).transpose(1,0)
         )
+        # weighted_target_rewards = torch.FloatTensor(target_rewards).transpose(1,0)
+        # print(f"\nweighted target_rewards tensor:\n{weighted_target_rewards}")
 
         return {
             'board_positions': board_posiiton,

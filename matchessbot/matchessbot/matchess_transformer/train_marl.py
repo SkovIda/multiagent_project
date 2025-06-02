@@ -24,9 +24,55 @@ from matchess_transformer.vocab_uci_dicts import CHESS_PIECE_AGENTS
 
 
 
-# def training_inference_phase(stepsize, batch_size, n_agents, n_episodes, steps_per_episode):
-#     for episode in range(n_episodes):
-#         for t in range(steps_per_episode):
+# ####### For validation of the reward function #####
+# from inference import generate_selfplay_pgn_data # MATChessPlayer, FairyStockfishPlayer
+# from generate_dataset_from_pgn_file import create_dataset_from_pgn_file
+
+# import json
+
+
+# def training_inference_phase(model_name, epoch, n_games=10):
+
+#     # Generate self-play data and save it to a pgn_file
+#     pgn_filepath = "./data/selfplay_data/" + model_name + "/"
+#     pgn_filename = "selfplay_pgn_epoch_" + str(epoch) + ".pgn"
+#     generate_selfplay_pgn_data(pgn_filename=pgn_filepath+pgn_filename, n_games=n_games, action_sample_from_top_k=3)
+
+
+#     # Generate a new MATCHessDataset from the PGN file of self-play data:
+#     dataset_dir = ".dataset/selfplay_" + model_name + "/"
+#     dataset_filename = "selfplay_pgn_epoch_" + str(epoch) + ".json"
+#     os.makedirs(dataset_dir, exist_ok=True)
+#     dataset_filepath = os.path.join(dataset_dir, dataset_filename)
+    
+#     with open(dataset_filepath, 'w') as outfile:
+#         pgn_games = create_dataset_from_pgn_file(pgn_file_dir=pgn_filepath, pgn_file=pgn_filename, max_dataset_entries=n_games)
+#         dataset_entry_count = 0
+#         dataset_game_count = 0
+#         for idx, game in tqdm(enumerate(pgn_games)):
+#             dataset_game_count += 1
+#             # print(f'\n\nGame #{idx}')
+#             entry = {
+#                     'pgn_filename': str(game['pgn_filename']),
+#                     'game_id': str(game['game_id']),
+#                     'game_offset_in_pgn': game['game_offset_in_pgn'],
+#                     'pgn_header_info': game['pgn_header_info'],
+#                     'state': {},
+#                     'action': "",
+#                     'rewards': {} #game['rewards']
+#                 }
+#             for state_idx, state_in_game in enumerate(game['states_action_next_state_attr']):
+#                 # print("\nGame State:")
+#                 entry['state'] = state_in_game['state']
+#                 entry['action'] = state_in_game['action']["uci_move"]
+#                 entry['rewards'] = state_in_game['rewards']
+#                 with open(dataset_filepath, 'a') as outfile:
+#                     json.dump(entry, outfile)
+#                     outfile.write('\n')
+#                     dataset_entry_count +=1
+#         print(f'Generated the MATChess dataset and saved it as: {dataset_filepath}')
+#         print(f'\tThe generated dataset contains {dataset_entry_count} states from {len(pgn_games)} games')
+
 
 
 
@@ -1094,6 +1140,22 @@ def validate_epoch(val_loader, model, criterion, value_criterion, epoch, writer,
                         input=predicted_rewards,
                         target=batch["rewards"],  # (N, n_rewards_per_agent)
                     )
+                    # TODO: Use returns instead of reward!!!
+                    # elif CONFIG['NAME'].startswith(("MATChessFormer-ImitativeRL-")):
+                    #     # Forward prop.
+                    #     predicted_moves, predicted_rewards = model(
+                    #         batch
+                    #     )  # (N, 1, 64), (N, 1, 64)
+
+                    #     policy_loss = criterion(
+                    #         predicted=predicted_moves,
+                    #         targets=batch["moves"],
+                    #         lengths= batch["n_agents"].view(-1,1),
+                    #     )
+                    #     value_loss = value_criterion(
+                    #         input=predicted_rewards,
+                    #         target=batch["returns"],  # (N, n_rewards_per_agent)
+                    #     )
 
                     loss = policy_loss + CONFIG['VALUE_LOSS_COEF'] * value_loss #value_criterion(predicted_rewards, batch["agents_rewards"]) # np.mean(value_loss) # scalar
                 # Other models
@@ -1236,7 +1298,7 @@ if __name__ == "__main__":
     # Get configuration
     # config = import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=2)
 
-    config = import_config(model_config_name="MATChessFormer-Heterogeneous-20-hubersum", run_number=3)
+    config = import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=5)
 
     # Train model
     train_model(config)

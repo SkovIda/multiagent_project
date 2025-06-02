@@ -8,7 +8,7 @@ import enum
 
 import chess
 
-from .matchess_transformer.matchess_transformer.config import import_config, ROS_CFG_HETEROGENEOUS_MAS_INFERENCE
+from .matchess_transformer.matchess_transformer.config import import_config, ROS_CFG_HETEROGENEOUS_MAS_INFERENCE, ROS_CFG_IMITATIVE_RL_INFERENCE, ROS_CFG_STANDARD_IL_INFERENCE
 from .matchess_transformer.matchess_transformer.model import MATChessTransformerEncoder, ChessTransformerEncoder #, LabelSmoothedCE, huber_loss
 from .matchess_transformer.matchess_transformer.tokenizer import Tokenizer
 from .matchess_transformer.matchess_transformer.vocab_uci_dicts import CHESS_PIECE_AGENTS, UCI_MOVES
@@ -18,6 +18,8 @@ class ModelType(enum.Enum):
     NONE = -1,
     MABC = 0,
     MARL = 1,
+    SIL = 2,
+    IRL = 3,
 
 class MATChessGameState:
     white_chess_piece_agents_start_pos = {
@@ -423,7 +425,7 @@ class MATChessTransformer:
     # print(f"\nRandomized agent priority{randomize_agent_priority}")
     chess_piece_agent_reward_weights = [[1.0] * reward_types_len] * len(chess_piece_agent_ids)
     
-    valid_model_types = [ModelType.MABC.name, ModelType.MARL.name]
+    valid_model_types = [ModelType.MABC.name, ModelType.MARL.name, ModelType.IRL.name, ModelType.SIL.name]
 
     voting_scheme = 'democracy'
 
@@ -463,8 +465,11 @@ class MATChessTransformer:
             #config_path = os.path.join(self.model_checkpoint_path_prefix, )
             CONFIG = ROS_CFG_HETEROGENEOUS_MAS_INFERENCE #import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=2, inference=True)
             model = MATChessTransformerEncoder(CONFIG)
-        elif self.model_type == ModelType.MABC:
-            CONFIG = import_config(model_config_name="MATChessFormer-Homogeneous-20", run_number=1, inference=True)
+        elif self.model_type == ModelType.IRL:
+            CONFIG = ROS_CFG_IMITATIVE_RL_INFERENCE #import_config(model_config_name="MATChessFormer-Heterogeneous-20", run_number=2, inference=True)
+            model = MATChessTransformerEncoder(CONFIG)
+        elif self.model_type == ModelType.MABC or self.model_type == ModelType.SIL:
+            CONFIG = ROS_CFG_STANDARD_IL_INFERENCE #import_config(model_config_name="MATChessFormer-Homogeneous-20", run_number=1, inference=True)
             model = ChessTransformerEncoder(CONFIG)
         else:
             raise NotImplementedError(f"Unknown model type. Valid model types are: {self.valid_model_types}")
@@ -512,6 +517,32 @@ class MATChessTransformer:
         policy_indices = flattened_indices // reward_logits.shape[-1]  # (N, max(k))
 
         return policy_indices[0, :k]
+    
+    def topk_sampling(self,logits, k=1):
+        """
+        Randomly sample from the multinomial distribution formed from the
+        "top-k" logits only.
+
+        Args:
+
+            logits (torch.FloatTensor): Predicted logits, of size (N,
+            vocab_size).
+
+            k (int, optional): Value of "k". Defaults to 1.
+
+        Returns:
+
+            torch.LongTensor: Samples (indices), of size (N).
+        """
+        k = min(k, logits.shape[1])
+
+        with torch.no_grad():
+            min_topk_logit_values = logits.topk(k=k, dim=1)[0][:, -1:]  # (N, 1)
+            logits[logits < min_topk_logit_values] = -float("inf")  #  (N, vocab_size)
+            probabilities = F.softmax(logits, dim=1)  #  (N, vocab_size)
+            samples = torch.multinomial(probabilities, num_samples=1).squeeze(1)  #  (N)
+
+        return samples
 
     def play(self):
         next_move = self.model_next_move(use_amp=True, k=1, show_board=False)
@@ -577,33 +608,50 @@ class MATChessTransformer:
             with torch.cuda.amp.autocast(       # torch version 1.8.0
                 enabled=use_amp
             ):
-                if self.model_type == ModelType.MABC:
+                
+                # Filter out move indices corresponding to illegal moves
+                legal_move_indices = [UCI_MOVES[m] for m in legal_moves]
+
+                move_votes = {}
+
+                if self.model_type == ModelType.MABC or self.model_type == ModelType.SIL:
                     predicted_moves = self.model(model_inputs)
-                elif self.model_type == ModelType.MARL:
+
+                    for agent_idx in range(self.n_agents):
+                        # Perform action sampling to obtain a legal predicted move
+                        if self.voting_scheme == 'democracy':
+                            legal_move_index = self.topk_sampling(
+                                logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
+                                k=k,
+                            ).item()
+                            
+                            # Keep track of all agent's votes:
+                            agent_vote = legal_moves[legal_move_index]
+                            if not agent_vote in move_votes.keys():
+                                move_votes[agent_vote] = 0
+                            move_votes[agent_vote] += 1
+
+                elif self.model_type == ModelType.MARL or self.model_type == ModelType.IRL:
                     predicted_moves, predicted_rewards = self.model(model_inputs)
+                    
+                    for agent_idx in range(self.n_agents):
+                        # Perform action sampling to obtain a legal predicted move
+                        if self.voting_scheme == 'democracy':
+                            legal_move_index = self.sample_action(
+                                policy_logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
+                                reward_logits=predicted_rewards[:, agent_idx, :],
+                                batch_size=self.batch_size,
+                                k=k,
+                            ).item()
+                            
+                            # Keep track of all agent's votes:
+                            agent_vote = legal_moves[legal_move_index]
+                            if not agent_vote in move_votes.keys():
+                                move_votes[agent_vote] = 0
+                            move_votes[agent_vote] += 1
                 else:
                     raise NotImplementedError(f"The loaded model is not a valid model type! Valid model types are: {self.valid_model_types}")
-                
-            # Filter out move indices corresponding to illegal moves
-            legal_move_indices = [UCI_MOVES[m] for m in legal_moves]
-
-            move_votes = {}
-
-            for agent_idx in range(self.n_agents):
-                # Perform action sampling to obtain a legal predicted move
-                if self.voting_scheme == 'democracy':
-                    legal_move_index = self.sample_action(
-                        policy_logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
-                        reward_logits=predicted_rewards[:, agent_idx, :],
-                        batch_size=self.batch_size,
-                        k=k,
-                    ).item()
-                    
-                    # Keep track of all agent's votes:
-                    agent_vote = legal_moves[legal_move_index]
-                    if not agent_vote in move_votes.keys():
-                        move_votes[agent_vote] = 0
-                    move_votes[agent_vote] += 1
+            
             
             print(move_votes)
 
@@ -688,47 +736,71 @@ class MATChessTransformer:
             with torch.cuda.amp.autocast(       # torch version 1.8.0
                 enabled=use_amp
             ):
-                if self.model_type == ModelType.MABC:
+                
+                # Filter out move indices corresponding to illegal moves
+                legal_move_indices = [UCI_MOVES[m] for m in legal_moves]
+
+                # move_votes = {}
+                
+                agent_votes = {}
+                agent_team_color = 'white' if self.game_env_turn_color() == chess.WHITE else 'black'
+
+                if self.model_type == ModelType.MABC or self.model_type == ModelType.SIL:
                     predicted_moves = self.model(model_inputs)
-                elif self.model_type == ModelType.MARL:
+
+                    for agent_idx in range(self.n_agents):
+                        # Perform action sampling to obtain a legal predicted move
+                        if not self.matchess_game_state.all_state_attributes_per_agent_before_action[-1][agent_team_color][self.chess_piece_agent_ids[agent_idx]]['is_alive']:
+                            continue
+
+                        if self.voting_scheme == 'democracy':
+                            legal_move_index = self.topk_sampling(
+                                logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
+                                k=k,
+                            ).item()
+                            
+                            # Keep track of all agent's votes:
+                            agent_votes[self.chess_piece_agent_ids[agent_idx]] = legal_moves[legal_move_index]
+                            # agent_vote = legal_moves[legal_move_index]
+                            # if not agent_vote in move_votes.keys():
+                            #     move_votes[agent_vote] = 0
+                            # move_votes[agent_vote] += 1
+
+                    
+                elif self.model_type == ModelType.MARL or self.model_type == ModelType.IRL:
                     predicted_moves, predicted_rewards = self.model(model_inputs)
+
+                    for agent_idx in range(self.n_agents):
+                        # Perform action sampling to obtain a legal predicted move
+                        if not self.matchess_game_state.all_state_attributes_per_agent_before_action[-1][agent_team_color][self.chess_piece_agent_ids[agent_idx]]['is_alive']:
+                            continue
+                        
+                        if self.voting_scheme == 'democracy':
+                            legal_move_index = self.sample_action(
+                                policy_logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
+                                reward_logits=predicted_rewards[:, agent_idx, :],
+                                batch_size=self.batch_size,
+                                k=k,
+                            ).item()
+                            
+                            # # Keep track of all agent's votes:
+                            agent_votes[self.chess_piece_agent_ids[agent_idx]] = legal_moves[legal_move_index]
+
+                            # agent_vote = legal_moves[legal_move_index]
+                            # if not agent_vote in move_votes.keys():
+                            #     move_votes[agent_vote] = 0
+                            # move_votes[agent_vote] += 1
+                    
+                    # print(move_votes)
+
+                    # model_move = max(move_votes, key=move_votes.get)
+
+                    # return model_move
+
                 else:
                     raise NotImplementedError(f"The loaded model is not a valid model type! Valid model types are: {self.valid_model_types}")
                 
-            # Filter out move indices corresponding to illegal moves
-            legal_move_indices = [UCI_MOVES[m] for m in legal_moves]
-
-            # move_votes = {}
-            
-            agent_votes = {}
-            agent_team_color = 'white' if self.game_env_turn_color() == chess.WHITE else 'black'
-
-            for agent_idx in range(self.n_agents):
-                # Perform action sampling to obtain a legal predicted move
-                if not self.matchess_game_state.all_state_attributes_per_agent_before_action[-1][agent_team_color][self.chess_piece_agent_ids[agent_idx]]['is_alive']:
-                    continue
-                
-                if self.voting_scheme == 'democracy':
-                    legal_move_index = self.sample_action(
-                        policy_logits= predicted_moves[:, agent_idx, legal_move_indices], #predicted_moves[:, legal_move_indices],
-                        reward_logits=predicted_rewards[:, agent_idx, :],
-                        batch_size=self.batch_size,
-                        k=k,
-                    ).item()
-                    
-                    # Keep track of all agent's votes:
-                    agent_votes[self.chess_piece_agent_ids[agent_idx]] = legal_moves[legal_move_index]
-
-                    # agent_vote = legal_moves[legal_move_index]
-                    # if not agent_vote in move_votes.keys():
-                    #     move_votes[agent_vote] = 0
-                    # move_votes[agent_vote] += 1
-            
-            # print(move_votes)
-
-            # model_move = max(move_votes, key=move_votes.get)
-
-            # return model_move
+            # agent_votes[self.chess_piece_agent_ids[agent_idx]] = legal_moves[legal_move_index]
             return agent_votes
 
     

@@ -144,6 +144,79 @@ ROS_CFG_HETEROGENEOUS_MAS_INFERENCE = {
 
 #############################
 
+ROS_CFG_STANDARD_IL_INFERENCE = {
+    "NAME": "MATChessFormer-Homogeneous-20",
+    "VOCAB_SIZES": get_vocab_sizes(),
+    "D_MODEL": 512,
+    "N_HEADS": 8,
+    "D_QUERIES": 64,
+    "D_VALUES": 64,
+    "D_INNER": 2048,
+    "N_LAYERS": 6,
+    "DROPOUT": 0.1, 
+    "N_MOVES": 1,           # expected maximum length of move sequences in the model, <= MAX_MOVE_SEQUENCE_LENGTH
+    "N_AGENTS": 16,
+    "BATCH_SIZE": 128,
+    "NUM_WORKERS": 0,       # number of workers to use for dataloading
+    "RUN_NUMBER": 1,
+    "CHECKPOINT_FOLDER": "training_runs",
+    "MAX_MOVE_SEQUENCE_LENGTH": 1, #10,
+    "SAMPLING_K": 1,        # k in top-k sampling model predictions during play
+    "BOARD_STATUS_LENGTH": 84,  # total length of input sequence
+    "TRAINING_CHECKPOINT": None, # path to model checkpoint (NAME + ".pt") to resume training, None if none
+    "CHECKPOINT_AVG_PREFIX": "step",
+    "CHECKPOINT_AVG_SUFFIX": ".pt",  # checkpoint end string to match checkpoints saved for averaging
+    "EVAL_GAMES_FOLDER": "training_runs/MATChessFormer-Homogeneous-20/evaluate_games/run_1",  # folder where evaluation games are saved in PGN files
+    "FINAL_CHECKPOINT": "averaged_MATChessFormer-Homogeneous-20_run_1.pt", # final checkpoint to be used for eval/inference
+    "AVERAGE_STEPS": {9000, 9250, 9550, 9700, 9850, 10000}, #{491000, 492500, 494000, 495500, 497000, 498500, 500000}
+    "MAX_DATASET_SIZE": None, #5000,
+    "MAX_N_SAMPLE_GAMES": None, #100,
+    "VALUE_LOSS_COEF": 11.0, #1.0,
+    "Policy_LOSS_COEF": 1.0, # Change to zero to only train on value loss #1.0,
+    "HUBER_DELTA": 2.0, #21.0,
+    "HUBER_LOSS_REDUCTION": 'mean', # the type of reduction used when calculating the Huber Loss. Can be one of the following: 'mean', 'sum', or None 
+    "MODEL_TYPE": "SIL",
+    "LOAD_MODEL_CHECKPOINT": "checkpoint_epoch_60_MATChessFormer-Homogeneous-20.pt"
+}
+
+
+ROS_CFG_IMITATIVE_RL_INFERENCE = {
+    "NAME": "MATChessFormer-ImitativeRL-20",
+    "VOCAB_SIZES": get_vocab_sizes(),
+    "D_MODEL": 512,
+    "N_HEADS": 8,
+    "D_QUERIES": 64,
+    "D_VALUES": 64,
+    "D_INNER": 2048,
+    "N_LAYERS": 6,
+    "DROPOUT": 0.1, 
+    "N_MOVES": 1,           # expected maximum length of move sequences in the model, <= MAX_MOVE_SEQUENCE_LENGTH
+    "N_AGENTS": 16,
+    "BATCH_SIZE": 128,
+    "NUM_WORKERS": 0,       # number of workers to use for dataloading
+    "RUN_NUMBER": 5,
+    "CHECKPOINT_FOLDER": "training_runs",
+    "MAX_MOVE_SEQUENCE_LENGTH": 1, #10,
+    "SAMPLING_K": 1,        # k in top-k sampling model predictions during play
+    "BOARD_STATUS_LENGTH": 84,  # total length of input sequence
+    "TRAINING_CHECKPOINT": None, # path to model checkpoint (NAME + ".pt") to resume training, None if none
+    "CHECKPOINT_AVG_PREFIX": "step",
+    "CHECKPOINT_AVG_SUFFIX": ".pt",  # checkpoint end string to match checkpoints saved for averaging
+    "EVAL_GAMES_FOLDER": "training_runs/MATChessFormer-ImitativeRL-20/evaluate_games/run_5",  # folder where evaluation games are saved in PGN files
+    "FINAL_CHECKPOINT": "averaged_MATChessFormer-ImitativeRL-20_run_5.pt", # final checkpoint to be used for eval/inference
+    "AVERAGE_STEPS": {9000, 9250, 9550, 9700, 9850, 10000}, #{491000, 492500, 494000, 495500, 497000, 498500, 500000}
+    "MAX_DATASET_SIZE": None, #5000,
+    "MAX_N_SAMPLE_GAMES": None, #100,
+    "VALUE_LOSS_COEF": 11.0, #1.0,
+    "Policy_LOSS_COEF": 1.0, # Change to zero to only train on value loss #1.0,
+    "HUBER_DELTA": 2.0, #21.0,
+    "HUBER_LOSS_REDUCTION": 'mean', # the type of reduction used when calculating the Huber Loss. Can be one of the following: 'mean', 'sum', or None 
+    "MODEL_TYPE": "MARL",
+    "LOAD_MODEL_CHECKPOINT": "checkpoint_epoch_75_MATChessFormer-ImitativeRL-20.pt"
+}
+
+
+#####################################
 
 def import_config(model_config_name: str="MATChessFormer-20", run_number: int=0, inference=False):
     # if ros:
@@ -152,9 +225,11 @@ def import_config(model_config_name: str="MATChessFormer-20", run_number: int=0,
 
     if inference:
         if model_config_name=="MATChessFormer-Homogeneous-20":
-            return CFG_HOMOGENEOUS_MAS_INFERENCE
+            return ROS_CFG_STANDARD_IL_INFERENCE # CFG_HOMOGENEOUS_MAS_INFERENCE
         elif model_config_name=="MATChessFormer-Heterogeneous-20":
-            return CFG_HETEROGENEOUS_MAS_INFERENCE
+            return ROS_CFG_HETEROGENEOUS_MAS_INFERENCE #CFG_HETEROGENEOUS_MAS_INFERENCE
+        elif model_config_name=="MATChessFormer-ImitativeRL-20":
+            return ROS_CFG_IMITATIVE_RL_INFERENCE #CFG_HETEROGENEOUS_MAS_INFERENCE
     
     elif model_config_name=="MATChessFormer-Homogeneous-20":
         return {
@@ -222,7 +297,7 @@ def import_config(model_config_name: str="MATChessFormer-20", run_number: int=0,
             "NUM_WORKERS": 0, #2,       # number of workers to use for dataloading
             "RUN_NUMBER": run_number,
             "CHECKPOINT_FOLDER": "training_runs/" + model_config_name + "/model_checkpoints/run_" + str(run_number) + "/",
-            "DATA_FOLDER": "dataset/gen_dataset_test.json",
+            "DATA_FOLDER": "dataset/gen_dataset_test_2.json",
             "LOGS_FOLDER": "training_runs/" + model_config_name + "/logs/run_" + str(run_number),
             "MAX_MOVE_SEQUENCE_LENGTH": 1, #10,
             "PREFETCH_FACTOR": None, #1,   # number of batches to prefetch per worker
@@ -252,7 +327,7 @@ def import_config(model_config_name: str="MATChessFormer-20", run_number: int=0,
             "SAVE_CHECKPOINT_EPOCH_FEQUENCY": 1,
             # "MODEL_CHECKPOINT_FOLDER": "training_runs/" + model_config_name + "/model_epoch_checkpoints/"
             "MAX_DATASET_SIZE": None, #5000,
-            "VALUE_LOSS_COEF": 1.0,
+            "VALUE_LOSS_COEF": 11.0, #1.0, # NOTE: Try 100.0 instead (value loss starts at approx. 0.065 and policy loss starts at 7.378)
             "HUBER_DELTA": 1.0,
             "HUBER_LOSS_REDUCTION": 'mean', # the type of reduction used when calculating the Huber Loss. Can be one of the following: 'mean', 'sum', or None 
             }
@@ -405,3 +480,113 @@ def import_config(model_config_name: str="MATChessFormer-20", run_number: int=0,
             "HUBER_DELTA": 1.0,
             "HUBER_LOSS_REDUCTION": 'sum', # the type of reduction used when calculating the Huber Loss. Can be one of the following: 'mean', 'sum', or None 
             }
+    elif model_config_name=="MATChessFormer-ImitativeRL-20":
+        return {
+            "NAME": model_config_name,
+            "VOCAB_SIZES": get_vocab_sizes(),
+            "D_MODEL": 512,
+            "N_HEADS": 8,
+            "D_QUERIES": 64,
+            "D_VALUES": 64,
+            "D_INNER": 2048,
+            "N_LAYERS": 6,
+            "DROPOUT": 0.1, 
+            "N_MOVES": 1,           # expected maximum length of move sequences in the model, <= MAX_MOVE_SEQUENCE_LENGTH
+            "N_AGENTS": 16,
+            "BATCH_SIZE": 128,
+            "NUM_WORKERS": 0, #2,       # number of workers to use for dataloading
+            "RUN_NUMBER": run_number,
+            "CHECKPOINT_FOLDER": "training_runs/" + model_config_name + "/model_checkpoints/run_" + str(run_number) + "/",
+            "DATA_FOLDER": "dataset/gen_dataset_test_2.json",
+            "LOGS_FOLDER": "training_runs/" + model_config_name + "/logs/run_" + str(run_number),
+            "MAX_MOVE_SEQUENCE_LENGTH": 1, #10,
+            "PREFETCH_FACTOR": None, #1,   # number of batches to prefetch per worker
+            "PIN_MEMORY": False,    # pin to GPU memory when dataloading?"
+            "SAMPLING_K": 1,        # k in top-k sampling model predictions during play
+            "PRINT_FREQUENCY": None, # 50, # 1, # print status once every so many steps
+            "N_STEPS": 10000, #100000,      # number of training steps
+            "WARMUP_STEPS": 100,   # 800,   # number of warmup steps where learning rate is increased linearly; twice the value in the paper, as in the official transformer repo.
+            "STEP": 1,              # the step number, start from 1 to prevent math error in the 'LR' line
+            "LR_SCHEDULE": "fixed", #"vaswani",  # the learning rate schedule; see utils.py for learning rate schedule
+            "LR_DECAY": None,       # the decay rate for 'exp_decay' schedule
+            "START_EPOCH": 0,       # start at this epoch
+            "BETAS": (0.9, 0.98),   # beta coefficients in the Adam optimizer
+            "EPSILON": 1e-9,  # epsilon term in the Adam optimizer
+            "LABEL_SMOOTHING": 0.1, # label smoothing co-efficient in the Cross Entropy loss
+            "BOARD_STATUS_LENGTH": 84,  # total length of input sequence
+            "USE_AMP": True,        # use automatic mixed precision training?
+            #"CRITERION" = LabelSmoothedCE  # training criterion (loss)
+            #"OPTIMIZER": "", #torch.optim.Adam  # optimizer
+            "BATCHES_PER_STEP": (16),# perform a training step, i.e. update parameters, once every so many batches
+            "TRAINING_CHECKPOINT": None, # path to model checkpoint (NAME + ".pt") to resume training, None if none
+            "CHECKPOINT_AVG_PREFIX": "step",
+            "CHECKPOINT_AVG_SUFFIX": ".pt",  # checkpoint end string to match checkpoints saved for averaging
+            "EVAL_GAMES_FOLDER": "training_runs/" + model_config_name + "/evaluate_games/run_" + str(run_number),  # folder where evaluation games are saved in PGN files
+            "FINAL_CHECKPOINT": "averaged_" + model_config_name + "_run_" + str(run_number) + ".pt", # final checkpoint to be used for eval/inference
+            "AVERAGE_STEPS": {9000, 9250, 9550, 9700, 9850, 10000}, #{491000, 492500, 494000, 495500, 497000, 498500, 500000}
+            "SAVE_CHECKPOINT_EPOCH_FEQUENCY": 1,
+            # "MODEL_CHECKPOINT_FOLDER": "training_runs/" + model_config_name + "/model_epoch_checkpoints/"
+            "MAX_DATASET_SIZE": None, #5000,
+            "MAX_N_SAMPLE_GAMES": None, #100,
+            "VALUE_LOSS_COEF": 11.0, #1.0,
+            "Policy_LOSS_COEF": 1.0, # Change to zero to only train on value loss #1.0,
+            "HUBER_DELTA": 2.0, #21.0,
+            "HUBER_LOSS_REDUCTION": 'mean', # the type of reduction used when calculating the Huber Loss. Can be one of the following: 'mean', 'sum', or None 
+            # 'USE_ACTION_SAMPLE_DATA': False,
+        }
+    elif model_config_name=="MATChessFormer-MARL-20":
+        return {
+            "NAME": model_config_name,
+            "VOCAB_SIZES": get_vocab_sizes(),
+            "D_MODEL": 512,
+            "N_HEADS": 8,
+            "D_QUERIES": 64,
+            "D_VALUES": 64,
+            "D_INNER": 2048,
+            "N_LAYERS": 6,
+            "DROPOUT": 0.1, 
+            "N_MOVES": 1,           # expected maximum length of move sequences in the model, <= MAX_MOVE_SEQUENCE_LENGTH
+            "N_AGENTS": 16,
+            "BATCH_SIZE": 128,
+            "NUM_WORKERS": 0, #2,       # number of workers to use for dataloading
+            "RUN_NUMBER": run_number,
+            "CHECKPOINT_FOLDER": "training_runs/" + model_config_name + "/model_checkpoints/run_" + str(run_number) + "/",
+            "DATA_FOLDER": "./dataset/selfplay_" + model_config_name + "/run_" + str(run_number), #"dataset/gen_dataset_test_2.json", #NOTE: Use this path instead to finetune the model via self-play games "./dataset/selfplay_" + model_config_name + "/run_" + str(run_number),
+            "LOGS_FOLDER": "training_runs/" + model_config_name + "/logs/run_" + str(run_number),
+            "MAX_MOVE_SEQUENCE_LENGTH": 1, #10,
+            "PREFETCH_FACTOR": None, #1,   # number of batches to prefetch per worker
+            "PIN_MEMORY": False,    # pin to GPU memory when dataloading?"
+            "SAMPLING_K": 1,        # k in top-k sampling model predictions during play
+            "PRINT_FREQUENCY": None, # 50, # 1, # print status once every so many steps
+            "N_STEPS": 5000, #100000,      # number of training steps
+            "WARMUP_STEPS": 100,   # 800,   # number of warmup steps where learning rate is increased linearly; twice the value in the paper, as in the official transformer repo.
+            "STEP": 1,              # the step number, start from 1 to prevent math error in the 'LR' line
+            "LR_SCHEDULE": "fixed", #"fixed", #"vaswani",  # the learning rate schedule; see utils.py for learning rate schedule
+            "LR_DECAY": None, #0.06, #None,       # the decay rate for 'exp_decay' schedule
+            "START_EPOCH": 0,       # start at this epoch
+            "BETAS": (0.9, 0.98),   # beta coefficients in the Adam optimizer
+            "EPSILON": 1e-9,  # epsilon term in the Adam optimizer
+            "LABEL_SMOOTHING": 0.1, # label smoothing co-efficient in the Cross Entropy loss
+            "BOARD_STATUS_LENGTH": 84,  # total length of input sequence
+            "USE_AMP": True,        # use automatic mixed precision training?
+            #"CRITERION" = LabelSmoothedCE  # training criterion (loss)
+            #"OPTIMIZER": "", #torch.optim.Adam  # optimizer
+            "BATCHES_PER_STEP": (16),# perform a training step, i.e. update parameters, once every so many batches
+            "TRAINING_CHECKPOINT": None, # TODO: Use the best training checkpoint from run_8 to finetune the model with self-play data for differnt reward weights "../../../MATChessFormer-ImitativeRL-20/model_checkpoints/run_5/checkpoint_epoch_99_MATChessFormer-ImitativeRL-20.pt",# None, # path to model checkpoint (NAME + ".pt") to resume training, None if none
+            "CHECKPOINT_AVG_PREFIX": "step",
+            "CHECKPOINT_AVG_SUFFIX": ".pt",  # checkpoint end string to match checkpoints saved for averaging
+            "EVAL_GAMES_FOLDER": "training_runs/" + model_config_name + "/evaluate_games/run_" + str(run_number),  # folder where evaluation games are saved in PGN files
+            "FINAL_CHECKPOINT": "averaged_" + model_config_name + "_run_" + str(run_number) + ".pt", # final checkpoint to be used for eval/inference
+            "AVERAGE_STEPS": {9000, 9250, 9550, 9700, 9850, 10000}, #{491000, 492500, 494000, 495500, 497000, 498500, 500000}
+            "SAVE_CHECKPOINT_EPOCH_FEQUENCY": 1,
+            # "MODEL_CHECKPOINT_FOLDER": "training_runs/" + model_config_name + "/model_epoch_checkpoints/"
+            "MAX_DATASET_SIZE": None, #TODO: Set max_dataset size to 10000 when fine-tuing the model?, #5000,
+            "MAX_N_SAMPLE_GAMES": None, #TODO: Set this to 100, when fine-tuing the model?
+            "VALUE_LOSS_COEF": 11.0, #11.0, #TODO: Set this to 1.0 when fine-tuing the model? #11.0, #1.0,
+            "Policy_LOSS_COEF": 0.3, #0.3, # Change to zero to only train on value loss #1.0,
+            "HUBER_DELTA": 2.0, #21.0,
+            "HUBER_LOSS_REDUCTION": 'mean', #'sum', # the type of reduction used when calculating the Huber Loss. Can be one of the following: 'mean', 'sum', or None 
+            'USE_ACTION_SAMPLE_DATA': False,
+            "N_EPOCHS": 50,
+        }
+    

@@ -27,6 +27,11 @@ import csv
 
 # from pathlib import Path
 
+
+from .matchess_transformer_wrapper import MATChessGameState
+import copy
+
+
 class MatchessManager(Node):
     def __init__(self, ChessComm, config_filename: str='matches_manager_config.txt', use_pettingzoo_env: bool=True, train: bool=False):
         super().__init__('matchess_manager')
@@ -199,6 +204,10 @@ class MatchessManager(Node):
         self.game_state_move_hist = []
         self.wait_for_move_hist_from_user = False
 
+        # Obtain positions for all agents from the MATChessGame state:
+        self.per_agent_game_state = MATChessGameState()
+        self.per_agent_game_state.init_new_matchess_game()
+
     def listener_callback(self, msg_in):
         if msg_in.agentname in self.recieved_vote_from_agent.keys():
             return
@@ -224,7 +233,7 @@ class MatchessManager(Node):
         self.recieved_vote_from_agent[msg_in.agentname] = msg_in.uci
 
         vote_count_string = msg_in.agentname + ' vote for ' + msg_in.uci + '\t(' + str(self.vote_count_during_turn) + ' votes of ' + str(msg_in.agentcount) + ' agents)'
-        self.get_logger().debug(vote_count_string)
+        self.get_logger().info(vote_count_string)
 
     def timer_callback(self):
         if self.wait_for_move_hist_from_user:
@@ -239,11 +248,21 @@ class MatchessManager(Node):
 
         # Store the move with the most votes:
         self.previous_move_uci = max(self.move_votes, key=self.move_votes.get)
-        self.get_logger().debug('Move %s won the vote' % self.previous_move_uci)
+        self.get_logger().info('Move %s won the vote' % self.previous_move_uci)
 
         self.game_half_move_count += 1
         self.log_game_hist_png += str(self.previous_move_uci) + ' '
-        self.log_game_hist[self.game_half_move_count] = {"Votes": self.move_votes, "agent Votes": self.recieved_vote_from_agent ,"Hist": self.log_game_hist_png}
+        
+        # self.log_game_hist[self.game_half_move_count] = {"Votes": self.move_votes, "agent Votes": self.recieved_vote_from_agent ,"Hist": self.log_game_hist_png}
+        # self.get_logger().debug('Game log: %s' % json.dumps(self.log_game_hist[self.game_half_move_count]))
+        agent_pos_square_idx = self.per_agent_game_state.white_chess_piece_agents_pos if self.per_agent_game_state.board.turn == chess.WHITE else self.per_agent_game_state.black_chess_piece_agents_pos
+        piece_pos_before_move = {}
+        for key, square_idx in agent_pos_square_idx.items():
+            if square_idx is not None:
+                piece_pos_before_move[key] = chess.SQUARE_NAMES[square_idx]
+        turn_color = 'white' if self.per_agent_game_state.board.turn == chess.WHITE else 'black'
+        self.log_game_hist[self.game_half_move_count] = {"turn_color": turn_color, "piece_pos_before_move": copy.deepcopy(piece_pos_before_move) ,"Votes": self.move_votes, "agent Votes": self.recieved_vote_from_agent, "Hist": self.log_game_hist_png}
+        
         self.get_logger().debug('Game log: %s' % json.dumps(self.log_game_hist[self.game_half_move_count]))
 
         # Reset the variables used for collecting and counting votes:
@@ -256,6 +275,10 @@ class MatchessManager(Node):
 
         # Update global state and save render of board as .png:
         self.global_board_state.push_uci(str(self.previous_move_uci))
+
+        # Update matchess env board (position of all the agents):
+        self.per_agent_game_state.matchess_env_step(str(self.previous_move_uci))
+
         # TODO: Add visualization of the last move that was made on the board
         svg_text = chess.svg.board(
             self.global_board_state,
@@ -302,11 +325,27 @@ class MatchessManager(Node):
             self.game_half_move_count += 1
             self.previous_move_uci = uci_move
             self.log_game_hist_png += self.previous_move_uci + ' '
-            self.log_game_hist[self.game_half_move_count] = {"Votes": {}, "agent Votes": {} ,"Hist": self.log_game_hist_png}
+            
+            # # self.log_game_hist[self.game_half_move_count] = {"Votes": {}, "agent Votes": {} ,"Hist": self.log_game_hist_png}
+            agent_pos_square_idx = self.per_agent_game_state.white_chess_piece_agents_pos if self.per_agent_game_state.board.turn == chess.WHITE else self.per_agent_game_state.black_chess_piece_agents_pos
+            piece_pos_before_move = {}
+            for key, square_idx in agent_pos_square_idx.items():
+                if square_idx is not None:
+                    piece_pos_before_move[key] = chess.SQUARE_NAMES[square_idx]
+
+            turn_color = 'white' if self.per_agent_game_state.board.turn == chess.WHITE else 'black'
+            self.log_game_hist[self.game_half_move_count] = {"turn_color": turn_color, "piece_pos_before_move": copy.deepcopy(piece_pos_before_move) ,"Votes": {}, "agent Votes": {}, "Hist": self.log_game_hist_png}
             self.get_logger().debug('Add Game log with move from input hist: %s' % json.dumps(self.log_game_hist[self.game_half_move_count]))
 
             # Update global state and save render of board as .png:
             self.global_board_state.push_uci(str(self.previous_move_uci))
+
+            # # Update matchess env board (position of all the agents):
+            # self.per_agent_game_state.matchess_env_step(str(self.previous_move_uci))
+            # Update matchess env board (position of all the agents):
+            self.per_agent_game_state.matchess_env_step(str(self.previous_move_uci))
+            
+
             # # TODO: Add visualization of the last move that was made on the board
             # svg_text = chess.svg.board(
             #     self.global_board_state,
@@ -324,12 +363,8 @@ class MatchessManager(Node):
             # with open(self.log_game_vote_hist_filename, 'w') as log_game_vote_hist_file:
             #     json.dump(self.log_game_hist, log_game_vote_hist_file)
             #     log_game_vote_hist_file.close()
-        
-        # TODO: Add visualization of the last move that was made on the board
-        # self.game_hist_path_prefix = 'test_data/puzzles/test_render_board_'
-        # self.hist_log_moves_filename = 'test_data/puzzles/game_hist.txt'
-        # self.log_game_vote_hist_filename = 'test_data/puzzles/log_game_vote_hist.json'
-        
+
+        # Save image of the board and visualize the last move that was made:
         svg_text = chess.svg.board(
             self.global_board_state,
             lastmove=chess.Move.from_uci(str(self.previous_move_uci)),
@@ -371,7 +406,7 @@ class MatchessManager(Node):
         msg_out.status_int = msg_in.status_int
 
         self.game_status_cmd_pub.publish(msg_out)
-        self.get_logger().debug("pub command %s to all agents" % msg_out.status_str)
+        self.get_logger().info("pub command %s to all agents" % msg_out.status_str)
         
         if msg_in.status_int == GAME_STATUS.SET_GAME_STATE_FROM_HIST.value:
             self.wait_for_move_hist_from_user = True

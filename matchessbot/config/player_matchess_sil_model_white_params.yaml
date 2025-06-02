@@ -1,0 +1,4 @@
+player_matchess:
+  ros__parameters:
+    piece_color: white
+    model_type: SIL

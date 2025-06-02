@@ -548,7 +548,7 @@ class GamePGN:
 
         return
 
-    def all_reward_attributes_for_game(self):
+    def all_reward_attributes_for_game(self, only_winning_players_moves=True):
         # Init new chess game:
         board = chess.Board()
         board.reset()
@@ -799,45 +799,11 @@ class GamePGN:
                 capture_agent_team_idx_offset = 0
                 capture_agent_idx_offset_within_team = self.reward_list_agent_order.index(state_action_captures[state_action_pair_idx]['capturing_agent_id'])
 
-                # Add the enum value for the piece type that was captured at the index belonging to the agent that captured it:
+                # # Add a "1" to the aggressiveness reward at the index belonging to the agent that captured it:
+                # state_attr_individual_aggressiveness[capture_agent_team_idx_offset * team_size + capture_agent_idx_offset_within_team] = 1.0 # state_action_captures[state_action_pair_idx]['captured_agent_type']
+
+                # NOTE: Uncomment the line below to this to add the enum value for the piece type that was captured at the index belonging to the agent that captured it instead of just setting the reward to 1:
                 state_attr_individual_aggressiveness[capture_agent_team_idx_offset * team_size + capture_agent_idx_offset_within_team] = state_action_captures[state_action_pair_idx]['captured_agent_type']
-                
-                # captured_piece_color = typing.cast(str, chess.COLOR_NAMES[not state_action_captures[state_action_pair_idx]['capturing_agent_team_color']])
-                # state_attr_piece_type_solidarity[captured_piece_color][state_action_captures[state_action_pair_idx]['captured_agent_type']] = -1
-
-                # print('BEFORE ACTION')
-                # print(all_boards_as_ucicode[state_action_pair_idx])
-                # print(f'AFTER ACTION:\t{game_move_hist[state_action_pair_idx]}')
-                # print(all_boards_as_ucicode[state_action_pair_idx + 1])
-
-
-            #############################################################
-            # for team_name in self.reward_list_team_order:
-            #     for agent_name in self.reward_list_agent_order:
-            #         # agent_order_in_state_attr_lists.append(team_name + '_' + agent_name)
-                    
-            #         # state_attr_survival_of_the_agents.append(all_state_attributes_per_agent_before_action[reward_state_idx][team_name][agent_name]['is_alive'])
-            #         state_attr_survival_of_the_agents.append(int(all_state_attributes_per_agent_before_action[reward_state_idx][team_name][agent_name]['is_alive']))
-
-            #         state_attr_individual_contribution.append(len(list(all_state_attributes_per_agent_before_action[reward_state_idx][team_name][agent_name]['attack_squares'])))
-
-            #         # TODO: Add the count of all pieces of the same color and type as this one to the "all_state_attributes_per_agent_before_action" dict.
-            #         state_attr_piece_type_solidarity.append(all_state_attributes_per_agent_before_action[reward_state_idx][team_name][agent_name]['same_piece_type_count'])
-
-            #         # state_attr_individual_defensiveness.append(all_state_attributes_per_agent_before_action[reward_state_idx][team_name][agent_name]['defended_by_agents_on_square'])
-            #         state_attr_individual_defensiveness.append(len(list(all_state_attributes_per_agent_before_action[reward_state_idx][team_name][agent_name]['defended_by_agents_on_square'])))
-
-            #         if reward_state_idx == terminal_state_idx and winning_team_name is not None:
-            #             # if winner_color == state_attr_society_team_goal.append(self.game_result_enum)
-            #             # if winning_team_name is None:
-                            
-            #             if winning_team_name == team_name:
-            #                 state_attr_society_team_goal.append(1)
-            #             else:
-            #                 state_attr_society_team_goal.append(-1)                        
-            #         else:
-            #             state_attr_society_team_goal.append(0)
-            #################################################################
 
             team_name = 'white' if state_action_pair_idx % 2 == 0 else 'black'
 
@@ -872,7 +838,7 @@ class GamePGN:
                 if reward_state_idx == terminal_state_idx and winning_team_name is not None:
                     # if winner_color == state_attr_society_team_goal.append(self.game_result_enum)
                     # if winning_team_name is None:
-                        
+                    
                     if winning_team_name == team_name:
                         state_attr_society_team_goal.append(1)
                     else:
@@ -972,36 +938,39 @@ class GamePGN:
             # attributes_for_all_states_actions_rewards.append(state_action_reward)
 
             # Only add the winning players state-action-pairs to the list:
-            if state_action_reward['state']['team_color'] == winning_team_name:
+            if only_winning_players_moves:
+                if state_action_reward['state']['team_color'] == winning_team_name:
+                    attributes_for_all_states_actions_rewards.append(state_action_reward)
+            else:
                 attributes_for_all_states_actions_rewards.append(state_action_reward)
         
-        # print("\nState-attributes for first and last state in game:")
-        # print(attributes_for_all_states_actions_rewards[0]['matchess_state_attributes'])
-        # print(attributes_for_all_states_actions_rewards[-1]['matchess_state_attributes'])
+            # print("\nState-attributes for first and last state in game:")
+            # print(attributes_for_all_states_actions_rewards[0]['matchess_state_attributes'])
+            # print(attributes_for_all_states_actions_rewards[-1]['matchess_state_attributes'])
 
-        # print(game_outcome)
-        # print(winning_team_name)
+            # print(game_outcome)
+            # print(winning_team_name)
 
-        # print("\nreward_state_attributes for first and last reward-state in the game:")
-        # print(attributes_for_all_states_actions_rewards[0]['reward_state_attributes'])
-        # print(attributes_for_all_states_actions_rewards[-1]['reward_state_attributes'])
+            # print("\nreward_state_attributes for first and last reward-state in the game:")
+            # print(attributes_for_all_states_actions_rewards[0]['reward_state_attributes'])
+            # print(attributes_for_all_states_actions_rewards[-1]['reward_state_attributes'])
 
-        # print(f'\nreward_state_attributes for the last state-action pair for each team in the game:')
-        # second_last_move_player_name = attributes_for_all_states_actions_rewards[-2]['state']['team_color']
-        # print(f'state-action-reward for player\t{second_last_move_player_name}:')
-        # print(attributes_for_all_states_actions_rewards[-2])
-        # last_move_player_name = attributes_for_all_states_actions_rewards[-1]['state']['team_color']
-        # print(f'state-action-reward for player\t{last_move_player_name}:')
-        # print(attributes_for_all_states_actions_rewards[-1])
-        ########################################################################################
+            # print(f'\nreward_state_attributes for the last state-action pair for each team in the game:')
+            # second_last_move_player_name = attributes_for_all_states_actions_rewards[-2]['state']['team_color']
+            # print(f'state-action-reward for player\t{second_last_move_player_name}:')
+            # print(attributes_for_all_states_actions_rewards[-2])
+            # last_move_player_name = attributes_for_all_states_actions_rewards[-1]['state']['team_color']
+            # print(f'state-action-reward for player\t{last_move_player_name}:')
+            # print(attributes_for_all_states_actions_rewards[-1])
+            ########################################################################################
 
-        # for idx, move in enumerate(game_move_hist, start=1):
-        #     # TODO: compute attributes for all agents for all states in the game and append to attribute list.
+            # for idx, move in enumerate(game_move_hist, start=1):
+            #     # TODO: compute attributes for all agents for all states in the game and append to attribute list.
 
-        #     board_fen = board.fen()
-        #     team_agents_pos = self.white_chess_piece_agents_pos if board.turn == chess.WHITE else self.black_chess_piece_agents_pos
+            #     board_fen = board.fen()
+            #     team_agents_pos = self.white_chess_piece_agents_pos if board.turn == chess.WHITE else self.black_chess_piece_agents_pos
 
-        #     board.push(move)
+            #     board.push(move)
 
             # state_action_reward = {
             #     'state': MATChessTeamState(halfmove_count=idx, prev_board_fen=board_fen,prev_chess_piece_agents_pos=team_agents_pos),
